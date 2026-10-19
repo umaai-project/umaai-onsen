@@ -15,6 +15,7 @@
 | [`docs/plan/m1_plan.md`](docs/plan/m1_plan.md) | M1 方案：手写逻辑模拟 |
 | [`docs/plan/library_candidates.md`](docs/plan/library_candidates.md) | 可进通用库的机制候选与鉴别结论 |
 | [`docs/plan/search_notes.md`](docs/plan/search_notes.md) | 源泉选择的搜索难点与优化方向 |
+| [`docs/plan/engine_coupling.md`](docs/plan/engine_coupling.md) | 引擎耦合面与引擎 review 的影响评估（review 期间的缓冲措施） |
 
 ## 状态
 
