@@ -16,7 +16,6 @@
 | [`docs/plan/library_candidates.md`](docs/plan/library_candidates.md) | 可进通用库的机制候选与鉴别结论 |
 | [`docs/plan/search_notes.md`](docs/plan/search_notes.md) | 源泉选择的搜索难点与优化方向 |
 | [`docs/plan/engine_coupling.md`](docs/plan/engine_coupling.md) | 引擎耦合面与引擎 review 的影响评估（分级、速查表、缓冲措施） |
-| [`docs/plan/engine_adapter.md`](docs/plan/engine_adapter.md) | 剧本侧引擎适配层设计（统一接口文件：职责边界 / 能力清单 / 守门） |
 
 ## 状态
 
