@@ -14,8 +14,7 @@
 3. 因此接口上的默认值取「面板值换算后的系数」，剧本提升时传乘算后的结果：
    - 比赛：默认 `scale = (100 + uma.race_bonus) / 100`（`race_bonus` 即 `saihou` 累加）；
      温泉生涯赛传 `scale = 默认 × career_race_multiplier × (1 + career_race_bonus/100)`（决赛期不乘剧本项）。
-   - 红点：默认 `scale = 1.0`（`distribute_hint` 内部已含卡面 `hint_prob_increase` 加算）；
-     温泉骏闪古泉传 `scale = 2.0`（**发生率**翻倍，不是次数翻倍；见 #4）。
+   - 红点：**不走 scale**——基础公式恒为基础发生率 × 卡面加成；剧本改算法时覆写 `distribute_hint`。
 
 4. **hint 有三种互不相同的机制，实现与接口都不得混用**（2026-10-19 用户提示）：
    - **发生率提升**（`hint_prob_increase` 面板值 / 剧本 `hint_bonus` 加算 → 概率）：决定「这张卡本回合是否出红点」，
@@ -31,8 +30,8 @@
 | # | 候选机制 | 现状 / 痛点 | 结论 |
 |---|---|---|---|
 | A1 | `BaseGame::push_race_event(scale: f64, pt_rate: f64)`：统一「取 `race_career` / `race_g{grade}` + 决赛期 G1 兜底 + 缩放 + `set_race`」 | 现逻辑锁在 `BaseAction::do_race` 内；剧本要自算倍率就得复制事件名与分段逻辑 | **M1 落地**。`scale` 语义见 §0；默认调用方传 `((100+race_bonus)/100, 1.0)`，行为与现状逐位一致。`pt_rate` 供 PT 单独缩放（温泉 1063 特例 PT ×0.45） |
-| A2 | `Game::default_after_train(train, rng)`：训练成功后的 AfterTrain 阶段通用处理（羁绊、红点事件、加练、友人点击、理事长 / 记者点击） | 约 100 行只在 `BasicGame` 里；温泉要自写一份，拉面也会要 | **M1 落地**。`BasicGame` 数值必须不变（等价重构） |
-| A3 | 红点**发生率系数**：给 `distribute_hint` 加 `scale` 参数（`fn distribute_hint(&mut self, scale: f64, rng)`） | `distribute_hint` 只有「基础率 × 卡面 `hint_prob_increase`」，温泉骏闪古泉 `hint_bonus = 100` 无处注入 | **M1 落地**。`scale` 语义＝**发生率系数**（乘在概率上），默认 `1.0`；温泉传 `2.0`（旧实现等价于 `+100%` 加到 `hint_prob_increase` 面板值）。**明确不用于**表达发生次数（`hint_count_bonus`）与红点等级（`hint_level`），三者见 §0 #4 |
+| A2 | `BaseGame::default_after_train(persons, train, rng)`：训练成功后的默认后处理（AfterTrain 阶段触发的主要内容：羁绊、红点事件、加练、友人点击、理事长 / 记者点击） | 约 100 行只在 `BasicGame` 里；温泉要自写一份，拉面也会要 | **M1 落地**（2026-10-19 定名 `default_after_train`，落 `BaseGame` 泛型方法；`persons` 由调用方传入）。`BasicGame` 数值必须不变（等价重构） |
+| A3 | 红点分配公式的剧本修正 | `distribute_hint` 只有「基础率 × 卡面 `hint_prob_increase`」，温泉骏闪古泉 `hint_bonus = 100` 无处注入 | **不做参数**（2026-10-19 用户拍板）：基础公式不含剧本修正（系数恒为 1.0）；剧本要改发生率算法（可能同时改系数与算法）时**整体覆写 `distribute_hint`**，由剧本自持实际实现。发生次数（`hint_count_bonus`）与红点等级（`hint_level`）仍是独立机制（§0 #4） |
 | A4 | `Game::add_friendship(person_index, value)` **提到契约层**（爱娇 +2、上限 100、按 `deck_index_of` 同步卡面） | 旧仓是**各局面各自实现**（`BasicGame` / `OnsenGame` / `RamenState` 各一份），trait 里从来没有；新仓只在 `BasicGame` 保留一份 → 通用层这份在移植时漏了 | **M1 落地**。逻辑沿用新仓 `BasicGame::add_friendship`，`BasicGame` 改为用契约默认实现，数值不变 |
 | A5 | 剧本事件分派钩子 `Game::on_special_event(event_id, rng) -> bool` | 旧仓与新仓都在 `apply_event` 里硬编码 id `match`（4012/4013/5007/809050004…） | **改为「剧本自持为主」**（用户批注）：剧本要自己决定是否沿用初始特殊事件，且有自己的特殊事件 → `apply_event` 由剧本实现；引擎不加快照式钩子。**可选轻量件**：把「初始特殊事件」处理抽成 `BaseGame` 上的可复用方法供剧本调用，避免复制 |
 | A6 | 回合固定事件表（`newyear` / `end` / `ticket` / `ending` 的硬编码回合）可配置 | 现 `BasicGame::stage_body` 内写死 `turn == 24 / 48 / 77`；温泉年末事件在 24/48/72 | **随 A5 处理**：剧本自持回合事件表；引擎不为此加配置项（避免把剧本节奏塞进通用配置） |

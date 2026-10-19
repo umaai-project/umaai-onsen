@@ -25,12 +25,12 @@
 
 ### M1a：跑通（骨架 + 核心机制）
 
-| 步 | 内容 | 产出 | 验收 |
-|---|---|---|---|
-| A0 | 引擎钩子落地（§4 的 H1–H5） | 引擎带默认实现的钩子 + 单测 | 引擎三档全绿；无使用方时行为不变（基线不位移） |
-| A1 | 建仓：复制模板、改名 `umaai-onsen`、三档依赖、bin、CI、docs | 可编译空壳 | `cargo check` / `clippy` 绿 |
-| A2 | 数据层：`data/scenario_onsen.json` 自持 + serde schema + 载入校验 | `OnsenData` + 载入器 | 载入/缺字段/长度一致性单测 |
-| A3 | 局面与阶段机：`OnsenGame` + `Stage`(0..4) + 策略流 + 三条轴接线 | 可推进的空局面 | 固定种子跑满 78 回合、两次逐位一致 |
+| 步 | 内容 | 产出 | 验收 | 状态 |
+|---|---|---|---|---|
+| A0 | 引擎钩子落地（§4 的 H1 / H2 / H4 / H5） | 引擎带默认实现的钩子 + 单测 | 引擎三档全绿；无使用方时行为不变（基线不位移） | ✅ 2026-10-19 |
+| A1 | 建仓：复制模板、改名 `umaai-onsen`、三档依赖、bin、CI、docs | 可编译空壳 | `cargo check` / `clippy` 绿 | ✅ 2026-10-19 |
+| A2 | 数据层：`data/scenario_onsen.json` 自持 + serde schema + 载入校验 | `OnsenData` + 载入器 | 载入/缺字段/长度一致性单测 | ✅ 2026-10-19 |
+| A3 | 局面与阶段机：`OnsenGame` + `Stage`(0..4) + 策略流 + 三条轴接线 | 可推进的空局面 | 固定种子跑满 78 回合、两次逐位一致 | ✅ 随 A1 落地 |
 | A4 | 训练与挖掘：温泉训练表、上层加成、**失败率下降补实现**、`deyilv`（旅馆）、挖掘力/量/进度/奖励、装备升级、源泉选择 | 核心机制 | 机制单测（见 §1.3 前半，含失败率下降） |
 | A5 | 入浴与超回复：入浴券、温泉效果、锁面板、超回复分档、临时上限 150 | 资源闭环 | 机制单测（票/分档/保底/上限） |
 | A6 | 比赛与基础事件：剧本 `Race`（倍率经 H1）、五维上限注入、继承/切者等引擎既有分支、剧本 5 条固定事件 | 一局可跑完 | 倍率口径单测 + 端到端冒烟 |
@@ -80,12 +80,11 @@ umaai-onsen/
 | # | 钩子 | 现痛点 | 形态 | 默认行为 |
 |---|---|---|---|---|
 | H1 | 比赛事件构造（= A1） | 剧本要自算倍率却仍要复制「取 `race_career` / `race_g{grade}` + 决赛期 G1 兜底 + `set_race`」 | `BaseGame::push_race_event(&mut self, scale: f64, pt_rate: f64) -> Result<()>` | 等价现 `BaseAction::do_race`（`scale = (100+race_bonus)/100`、`pt_rate = 1.0`）；温泉生涯赛传乘算后的 `scale`、1063 传 `pt_rate = 0.45` |
-| H2 | 训练后处理（= A2） | 羁绊 / 红点 / 加练 / 友人点击 / 理事长·记者点击约 100 行只在 `BasicGame`，剧本要复制 | `Game` trait provided：`fn default_after_train(&mut self, train: usize, rng: &mut impl Rng) -> Result<()>` | `BasicGame` 改调本方法，数值不变（等价重构） |
-| H3 | 红点**发生率系数**（= A3） | `distribute_hint` 只有「基础率 × 卡面 `hint_prob_increase`」，温泉骏闪古泉 `hint_bonus = 100` 无处注入 | 给 `distribute_hint` 加参数：`fn distribute_hint(&mut self, scale: f64, rng: &mut impl Rng)` | 调用方传 `1.0` 等价现状；温泉传 `2.0`。**只表达发生率**：不用于发生次数（`hint_count_bonus`）与红点等级（`hint_level`），两者见 A13 |
-| H4 | 羁绊出口（= A4） | 旧仓各局面各写一份、trait 从来没有；新仓只在 `BasicGame` 留一份（通用层这份移植时漏了） | `Game` trait provided：`fn add_friendship(&mut self, person_index: usize, value: i32)`，逻辑＝现 `BasicGame::add_friendship`（爱娇 +2、上限 100、按 `deck_index_of` 同步卡面） | `BasicGame` 改用默认实现，数值不变 |
+| H2 | 训练后默认处理（= A2） | 羁绊 / 红点 / 加练 / 友人点击 / 理事长·记者点击约 100 行只在 `BasicGame`，剧本要复制 | `BaseGame::default_after_train(persons, train, rng)`：AfterTrain 阶段触发内容的默认档（剧本可调用，也可写自己的实现） | `BasicGame` 改调本方法，数值不变（等价重构） |
+| H4 | 羁绊出口（= A4） | 旧仓各局面各写一份、trait 从来没有；新仓只在 `BasicGame` 留一份（通用层这份移植时漏了） | `BaseGame::add_friendship(persons, person_index, value)`（爱娇 +2、上限 100、按 `card_id` 同步卡面）；`Person` 补 `set_friendship` | `BasicGame` 改为转调，数值不变 |
 | H5 | 配置覆盖层 helper（= B5） | 引擎 `Config` 已有「严格解析 + 段缺失整段沿用」语义，但剧本配置段不进引擎、剧本仓要重写一遍 | `umaai::config` 出泛型 helper（`OverlayConfig` trait + `parse_with_overlay`），引擎 `Config` 改用它 | 引擎 `Config` 行为不变（等价重构），剧本配置段复用同一套语义 |
 
-**不做（本批已定）**：A5 事件分派钩子与 A6 回合事件表 → `apply_event` 与回合事件表**由剧本自持**；引擎可选提供「初始特殊事件」可复用件。
+**不做（本批已定）**：A3 红点分配参数 → 基础公式恒不含剧本修正，剧本改算法时**整体覆写 `distribute_hint`**；A5 事件分派钩子与 A6 回合事件表 → `apply_event` 与回合事件表**由剧本自持**；引擎可选提供「初始特殊事件」可复用件。
 A7 友人流程、B2 阈值分档、B3 累计进位、B4 形状校验 → 不做通用件。
 **待讨论**：A12 `apply_event` 的 `scale` / `vital_scale` 形态（与 H1 的 `scale` 口径统一，倾向给 `BaseGame::apply_event` 加参数，默认 1.0）。
 
@@ -101,7 +100,7 @@ A7 友人流程、B2 阈值分档、B3 累计进位、B4 形状校验 → 不做
 | 2 | 三随机轴 | 超回复抽签、PR 客人、分身、事件分布能各归其轴，且每回合派生即可保证配对 |
 | 3 | override seam | 训练值上下层正好用 `default_calc_training_value` 复用下层计算 |
 | 4 | 注入点 | 五维上限、比赛等级表、数据根、剧本配置全部由外部注入，引擎不硬编码 |
-| 5 | 契约缺口的收敛方式 | 5 个钩子（H1–H5）是否够用；hint 三机制（发生率 / 次数 / 等级）是否都找到合适落点；是否需要 `ScenarioRules` / `ScenarioLifecycle`（open_items #10） |
+| 5 | 契约缺口的收敛方式 | 4 个钩子（H1 / H2 / H4 / H5）是否够用；hint 三机制（发生率 / 次数 / 等级）是否都找到合适落点；是否需要 `ScenarioRules` / `ScenarioLifecycle`（open_items #10） |
 | 6 | View DTO 形态 A | 温泉资源（源泉状态 / 挖掘 / 券 / 效果）能否只靠单一取数口交付给前端 |
 
 ***

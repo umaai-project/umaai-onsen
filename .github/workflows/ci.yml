@@ -1,0 +1,29 @@
+# 温泉剧本仓 CI：需要把引擎仓检出到并列目录（默认 `../umaai_next`），再跑本仓门禁。
+# 数据根用引擎仓 `gamedata/`（剧本数值表由引擎默认配置提供，剧本数据 A2 起接入）。
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout engine repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/umaai-next
+          path: umaai_next
+          token: ${{ secrets.ENGINE_REPO_TOKEN }}
+        continue-on-error: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: fmt
+        run: cargo fmt --all --check
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: test
+        run: cargo test --release
