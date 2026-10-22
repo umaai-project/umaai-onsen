@@ -31,8 +31,8 @@
 | A1 | 建仓：复制模板、改名 `umaai-onsen`、三档依赖、bin、CI、docs | 可编译空壳 | `cargo check` / `clippy` 绿 | ✅ 2026-10-19 |
 | A2 | 数据层：`data/scenario_onsen.json` 自持 + serde schema + 载入校验 | `OnsenData` + 载入器 | 载入/缺字段/长度一致性单测 | ✅ 2026-10-19 |
 | A3 | 局面与阶段机：`OnsenGame` + `Stage`(0..4) + 策略流 + 三条轴接线 | 可推进的空局面 | 固定种子跑满 78 回合、两次逐位一致 | ✅ 随 A1 落地 |
-| A4 | 训练与挖掘：温泉训练表、上层加成、**失败率下降补实现**、`deyilv`（旅馆）、挖掘力/量/进度/奖励、装备升级、源泉选择 | 核心机制 | 机制单测（见 §1.3 前半，含失败率下降） |
-| A5 | 入浴与超回复：入浴券、温泉效果、锁面板、超回复分档、临时上限 150 | 资源闭环 | 机制单测（票/分档/保底/上限） |
+| A4 | 训练与挖掘：温泉训练表、上层加成、**失败率下降补实现**、`deyilv`（旅馆）、挖掘力/量/进度/奖励、装备升级、源泉选择 | 核心机制 | 机制单测（见 §1.3 前半，含失败率下降） | ✅ 2026-10-20 |
+| A5 | 入浴与超回复：入浴券、温泉效果、锁面板、超回复分档、临时上限 150 | 资源闭环 | 机制单测（票/分档/保底/上限） | ✅ 2026-10-20 |
 | A6 | 比赛与基础事件：剧本 `Race`（倍率经 H1）、五维上限注入、继承/切者等引擎既有分支、剧本 5 条固定事件 | 一局可跑完 | 倍率口径单测 + 端到端冒烟 |
 | A7 | 手写训练员（最小版）：守门链（病→治病、比赛回合→比赛、券→入浴、挖掘→顺序表）+ 简化打分表 + 事件选项 | 全决策点覆盖 | 无 dead loop、无 panic、跑满回合 |
 | A8 | 装配与呈现：`build_game`、剧本配置段 `onsen_config.toml`、`OnsenView` 值快照、bin 一局 | 可运行入口 | 端到端 + View 序列化 |
@@ -52,18 +52,34 @@
 
 ## 3. 剧本仓形态
 
+**单包多 bin，不改 workspace**：剧本能力全在 lib，模拟 / 在线决策 / 测卡三类入口都只是 thin 外壳——
+bin 只做参数解析 + 调 lib + 退出码（照引擎 `umaai-cli` 的 thin bin 形态），入口真正逻辑进 lib 子模块，
+以便 `tests/` 与下游宿主复用同一份逻辑。
+
 ```
 umaai-onsen/
-├─ Cargo.toml            # 独立包（开发期 path 依赖引擎三件；稳定期 git tag）
-├─ src/                  # lib：局面 / 动作 / 人头 / 训练员 / 数据 / View / 装配
-│  └─ bin(root)          # 主线自测外壳（复用 umaai-cli 呈现件）
+├─ Cargo.toml            # 独立包 + 自带 [workspace] 根（将来加 crate 只在本表登记 members）
+├─ src/
+│  ├─ lib.rs             # lib：局面 / 动作 / 人头 / 训练员 / 数据 / View / 装配
+│  ├─ session.rs         # 在线决策：onsen 帧段解析 + 帧驱动接线（M2 落位，M1 不做）
+│  ├─ bench.rs           # 测卡 / 数值基线裁判（A4 起「变更探测器」复用同一条通路）
+│  ├─ main.rs            # bin `umaai-onsen`＝模拟 / 自测外壳（复用 umaai-cli 呈现件）
+│  └─ bin/
+│     ├─ onsen-session.rs    # 在线决策外壳（thin，M2）
+│     └─ onsen-bench.rs      # 测卡外壳（thin）
 ├─ data/scenario_onsen.json   # 剧本资产（不进引擎仓）
 ├─ config/onsen_config.toml   # 剧本专属配置段（源泉顺序等）
-├─ tests/                # 集成测试（Checker 风格）
+├─ tests/                # 集成测试（Checker 风格；直接调 lib 的 session / bench 子模块）
 ├─ baselines/            # 固定种子基线（剧本仓自持）
 └─ docs/{glossary.md,mechanism.md,plan/m1_plan.md,tests_overview.md}
 ```
 
+- **重依赖走 feature 门控**（沿引擎做法，不为入口建 crate）：`file-channel = ["umaai/file-channel"]`
+  （notify，在线决策用）、`parallel = ["umasim/parallel"]`（rayon，测卡用）；`default` 开这两个，
+  Web / Android 宿主取 lib 时用 `default-features = false` 剪掉。
+- **升格 workspace 的触发条件**（任一出现再拆，不提前拆）：① 测卡 / 基线裁判要被 `tests/` 以外的仓复用，
+  且其依赖（rayon / tabled / lexopt）不该污染剧本 lib → 按引擎 `umaai-tools` 同款拆工具 crate；
+  ② 在线决策依赖面与 lib 不可调和（引异步运行时 / 网络栈）；③ 需要独立发布节奏或独立版本。
 - **数据与配置由宿主注入**：引擎数据根（`gamedata/`）与剧本数据各自独立；剧本侧只接根目录参数。
 - **阶段自持**：内部强类型枚举，对外只投影 `StageId`（显式赋号 0..4，改号＝旧种子失效）。
 - **三轴随机**：局面流 / 事件流取自 `BaseGame`，策略流剧本自持（每回合按 `(master, turn)` 派生）。

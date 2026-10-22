@@ -156,7 +156,7 @@ pub struct SuperEffect {
 }
 
 /// 旅馆等级档
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HotelEffect {
     /// 达到该档所需的已挖源泉数
