@@ -74,25 +74,27 @@ impl ManualTrainer {
         format!("{head}\n{body}\n{values}")
     }
 
-    /// 人头分布表：每训练一列（列头「训练名 Lv 等级」），行对齐各列人物
+    /// 人头分布表：每训练一列（列头「训练名 Lv 等级」），一格内多行列出该训练位全部人物
     fn distribution_grid(game: &OnsenGame, color: bool) -> String {
         let mut grid = Grid::new(
             (0..5).map(|train| format!("{} Lv{}", train_name(train), game.train_level(train))),
         );
-        let columns: Vec<Vec<String>> = (0..5)
+        let cells: Vec<String> = (0..5)
             .map(|train| {
-                game.distribution()[train]
+                let members: Vec<String> = game.distribution()[train]
                     .iter()
                     .filter(|index| **index >= 0)
                     .filter_map(|index| game.persons.get(*index as usize).map(|_| *index as usize))
                     .map(|index| person_label(game, index, train, color))
-                    .collect()
+                    .collect();
+                if members.is_empty() {
+                    "—".to_string()
+                } else {
+                    members.join("\n")
+                }
             })
             .collect();
-        let height = columns.iter().map(Vec::len).max().unwrap_or(0);
-        for row in 0..height {
-            grid.push((0..5).map(|train| columns[train].get(row).cloned().unwrap_or_default()));
-        }
+        grid.push(cells);
         grid.render(term::resolve_width(None))
     }
 
