@@ -71,26 +71,47 @@ impl ManualTrainer {
         format!("{head}\n{}", Self::distribution_grid(game, color))
     }
 
-    /// 人头分布表：每训练一列（列头「训练名 Lv 等级」），行对齐各列人物
+    /// 人头分布表：每训练一行——数值摘要一格、该训练位人物一格内多行
     fn distribution_grid(game: &OnsenGame, color: bool) -> String {
-        let mut grid = Grid::new(
-            (0..5).map(|train| format!("{} Lv{}", train_name(train), game.train_level(train))),
-        );
-        let columns: Vec<Vec<String>> = (0..5)
-            .map(|train| {
-                game.distribution()[train]
-                    .iter()
-                    .filter(|index| **index >= 0)
-                    .filter_map(|index| game.persons.get(*index as usize).map(|_| *index as usize))
-                    .map(|index| person_label(game, index, train, color))
-                    .collect()
-            })
-            .collect();
-        let height = columns.iter().map(Vec::len).max().unwrap_or(0);
-        for row in 0..height {
-            grid.push((0..5).map(|train| columns[train].get(row).cloned().unwrap_or_default()));
+        let mut grid = Grid::new(["训练", "数值", "人物"]);
+        for train in 0..5 {
+            let head = format!("{} Lv{}", train_name(train), game.train_level(train));
+            let members: Vec<String> = game.distribution()[train]
+                .iter()
+                .filter(|index| **index >= 0)
+                .filter_map(|index| game.persons.get(*index as usize).map(|_| *index as usize))
+                .map(|index| person_label(game, index, train, color))
+                .collect();
+            let person_cell = if members.is_empty() {
+                "—".to_string()
+            } else {
+                members.join("\n")
+            };
+            grid.push([head, Self::training_value_cell(game, train), person_cell]);
         }
         grid.render(term::resolve_width(None))
+    }
+
+    /// 训练数值摘要格：实际增加数值（引擎 `ActionValue` 紧凑摘要）+ 成功率（未满 100% 才显示）
+    ///
+    /// 数值与 `OnsenTrainer` 打分同源（`calc_training_value` 的温泉上下层口径、卡片 buffs
+    /// 的失败率），玩家手动决策与手写策略看到的是同一套数。
+    fn training_value_cell(game: &OnsenGame, train: usize) -> String {
+        let buffs = match game.calc_training_buff(train) {
+            Ok(buffs) => buffs,
+            Err(err) => return format!("（数值不可用: {err}）"),
+        };
+        let value = match game.calc_training_value(&buffs, train) {
+            Ok(value) => value,
+            Err(err) => return format!("（数值不可用: {err}）"),
+        };
+        let mut lines = vec![value.to_string()];
+        if let Ok(rate) = game.calc_training_failure_rate(&buffs, train)
+            && rate > 0.0
+        {
+            lines.push(format!("成功率{:.0}%", 100.0 - rate));
+        }
+        lines.join("\n")
     }
 
     /// 事件选项组的展示行：组内各结果的档名、概率与数值
