@@ -1,5 +1,6 @@
-//! A4–A5 机制单测：训练表 / 训练上下层 / 失败率下降 / 挖掘力三部分 / 跨地层 / 30 点挖掘奖励 /
-//! 旅馆档 / 温泉券与发放回合 / 超回复分档与保底 / 入浴效果与临时上限 / PR / 红点加成覆写
+//! A4–A6 机制单测：训练表 / 训练上下层 / 失败率下降 / 挖掘力三部分 / 跨地层 / 30 点挖掘奖励 /
+//! 旅馆档 / 温泉券与发放回合 / 超回复分档与保底 / 入浴效果与临时上限 / PR / 红点加成覆写 /
+//! 比赛倍率 / 固定回合事件 / 事件特例 / 休息心得 / 分身
 //!
 //! 项目约定：集成测试不用 `assert`，用打印 + `Result` 返回值；失败由 `Err` / 非零退出码判定。
 //! 为了让公式可逐位断言，测试自建「受控局面」：剧本数据由本仓 `data/` 载入后就地改写
@@ -14,10 +15,11 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 use umaai::Config;
 use umaai_core::Data;
+use umaai_core::gamedata::{ActionValue, EventData, TriggerType};
 
-use umaai_onsen::{Action, MAX_TURN, OnsenData, OnsenGame};
+use umaai_onsen::{Action, MAX_TURN, OnsenData, OnsenGame, OnsenTrainer};
 use umasim::game::{
-    ActionEnum, CardTrainingEffect, FriendCardState, Game, InheritInfo, Person, PersonType,
+    ActionEnum, CardTrainingEffect, FriendCardState, Game, InheritInfo, Person, PersonType, Trainer,
 };
 
 /// 引擎数据根（本仓测试固定用并列引擎仓的数据；CI 按同样布局检出）
@@ -792,6 +794,564 @@ fn full_game_reaches_end_turn() -> Result<()> {
         game.turn(),
         game.dig_count,
         game.uma().five_status
+    );
+    Ok(())
+}
+
+/// 按 ID 取一份事件（引擎通用事件 + 温泉剧本固定事件）
+fn engine_event(id: u32) -> Result<EventData> {
+    let engine = Data::get()?;
+    let found = engine
+        .events
+        .story_events
+        .iter()
+        .chain(engine.events.uma_events.iter())
+        .chain(engine.events.friend_events.values())
+        .find(|event| event.id == id)
+        .cloned();
+    if let Some(event) = found {
+        return Ok(event);
+    }
+    load_onsen_data()?
+        .scenario_events
+        .iter()
+        .find(|event| event.id == id)
+        .cloned()
+        .with_context(|| format!("数据缺少事件 {id}"))
+}
+
+/// 比赛倍率：生涯赛吃「剧本倍率 × 源泉加成」，自选赛只吃赛后加成；1063 另有 ×2.7 / PT×0.45
+#[test]
+fn race_scenario_multiplier() -> Result<()> {
+    let cfg = setup()?;
+    let data = load_onsen_data()?;
+    let mut game = controlled_game(&cfg, data.clone())?;
+    let mut rng = StdRng::seed_from_u64(5);
+    game.base.uma.race_bonus = 10;
+    let default_scale = (100 + game.base.uma.race_bonus) as f64 / 100.0;
+    // 生涯回合：turn < 72 才有剧本倍率
+    let career_turn = (0..72)
+        .find(|turn| game.base.uma.is_race_turn(*turn))
+        .context("找不到生涯赛回合")?;
+    let career_base = Data::get()?.system_event("race_career")?.choices[0][0]
+        .value
+        .clone();
+
+    // ① 生涯赛 + 温泉效果：默认系数 × 剧本倍率 × 源泉加成
+    game.base.turn = career_turn;
+    game.bathing.buff_remain_turn = 2;
+    game.onsen_buff.career_race_bonus = 30;
+    game.unresolved_events.clear();
+    Action::Race.apply(&mut game, &mut rng)?;
+    let scale = default_scale * data.career_race_multiplier * 1.30;
+    let got = game
+        .unresolved_events
+        .last()
+        .context("比赛应产生事件")?
+        .choices[0][0]
+        .value
+        .clone();
+    for slot in 0..6 {
+        let want = ((career_base.status_pt[slot] as f64) * scale).round() as i32;
+        if got.status_pt[slot] != want {
+            bail!(
+                "生涯赛槽 {slot} 应为 {want}（scale={scale:.3}），实际 {}",
+                got.status_pt[slot]
+            );
+        }
+    }
+
+    // ② 温泉效果关闭：源泉加成不生效
+    game.bathing.buff_remain_turn = 0;
+    game.unresolved_events.clear();
+    Action::Race.apply(&mut game, &mut rng)?;
+    let scale_no_buff = default_scale * data.career_race_multiplier;
+    let got_no_buff = &game
+        .unresolved_events
+        .last()
+        .context("比赛应产生事件")?
+        .choices[0][0]
+        .value;
+    for slot in 0..6 {
+        let want = ((career_base.status_pt[slot] as f64) * scale_no_buff).round() as i32;
+        if got_no_buff.status_pt[slot] != want {
+            bail!(
+                "效果关闭后生涯赛槽 {slot} 应为 {want}，实际 {}",
+                got_no_buff.status_pt[slot]
+            );
+        }
+    }
+
+    // ③ 自选比赛：不吃剧本倍率与源泉加成
+    let self_turn = (14..72)
+        .find(|turn| {
+            game.base.turn = *turn;
+            !game.base.uma.is_race_turn(*turn) && game.base.race_grade().is_some()
+        })
+        .context("找不到可自选比赛回合")?;
+    let grade = game.base.race_grade().context("自选回合应有等级")?;
+    let self_base = Data::get()?
+        .system_event(&format!("race_g{grade}"))?
+        .choices[0][0]
+        .value
+        .clone();
+    game.base.turn = self_turn;
+    game.bathing.buff_remain_turn = 2;
+    game.onsen_buff.career_race_bonus = 30;
+    game.unresolved_events.clear();
+    Action::Race.apply(&mut game, &mut rng)?;
+    let got_self = &game
+        .unresolved_events
+        .last()
+        .context("比赛应产生事件")?
+        .choices[0][0]
+        .value;
+    for slot in 0..6 {
+        let want = ((self_base.status_pt[slot] as f64) * default_scale).round() as i32;
+        if got_self.status_pt[slot] != want {
+            bail!(
+                "自选比赛槽 {slot} 应为 {want}（仅赛后加成），实际 {}",
+                got_self.status_pt[slot]
+            );
+        }
+    }
+
+    // ④ 特殊角色 1063：出道赛后（turn > 12）再 ×2.7，PT ×0.45
+    let special = OnsenGame::newgame(
+        106301,
+        &cfg.sim.cards,
+        InheritInfo {
+            blue_count: [3, 0, 0, 0, 0],
+            ..Default::default()
+        },
+        cfg.race_grades()?,
+        Arc::new(data.clone()),
+    );
+    let mut special = special?;
+    // 1063 的建局可能带入初始赛后加成，测试里固定为 0，只验证剧本倍率与 PT 折算
+    special.base.uma.race_bonus = 0;
+    let mut rng = StdRng::seed_from_u64(5);
+    let turn_1063 = (13..72)
+        .find(|turn| special.base.uma.is_race_turn(*turn))
+        .context("1063 找不到出道赛之后的生涯回合")?;
+    let base_1063 = Data::get()?.system_event("race_career")?.choices[0][0]
+        .value
+        .clone();
+    special.base.turn = turn_1063;
+    special.unresolved_events.clear();
+    Action::Race.apply(&mut special, &mut rng)?;
+    let scale_1063 = data.career_race_multiplier * 2.7;
+    let got_1063 = &special
+        .unresolved_events
+        .last()
+        .context("比赛应产生事件")?
+        .choices[0][0]
+        .value;
+    for slot in 0..5 {
+        let want = ((base_1063.status_pt[slot] as f64) * scale_1063).round() as i32;
+        if got_1063.status_pt[slot] != want {
+            bail!(
+                "1063 槽 {slot} 应为 {want}（scale={scale_1063:.3}），实际 {}",
+                got_1063.status_pt[slot]
+            );
+        }
+    }
+    let pt_after_scale = ((base_1063.status_pt[5] as f64) * scale_1063).round() as i32;
+    let want_pt = ((pt_after_scale as f64) * 0.45).round() as i32;
+    if got_1063.status_pt[5] != want_pt {
+        bail!(
+            "1063 PT 应为 {want_pt}（×0.45），实际 {}",
+            got_1063.status_pt[5]
+        );
+    }
+    println!(
+        "比赛倍率：生涯 {scale:.3}（无效果 {scale_no_buff:.3}），自选 {default_scale:.3}，1063 {scale_1063:.3} / PT×0.45"
+    );
+    Ok(())
+}
+
+/// 固定回合事件：剧本 5 条固定事件在 2 / 24 / 48 / 72 / 77 回合进入事件链
+#[test]
+fn scenario_fixed_events_by_turn() -> Result<()> {
+    let cfg = setup()?;
+    let data = load_onsen_data()?;
+    let mut game = controlled_game(&cfg, data.clone())?;
+    let mut rng = StdRng::seed_from_u64(9);
+    for turn in [2, 24, 48, 72, 77] {
+        let expected: Vec<u32> = data
+            .scenario_events
+            .iter()
+            .filter(|event| match &event.trigger {
+                TriggerType::Fixed { turns } => turns.contains(&turn),
+                _ => false,
+            })
+            .map(|event| event.id)
+            .collect();
+        if expected.is_empty() {
+            bail!("剧本数据缺少第 {turn} 回合固定事件");
+        }
+        game.base.turn = turn;
+        let events = game.generate_events(&mut rng);
+        for id in &expected {
+            if !events.iter().any(|event| event.id == *id) {
+                bail!(
+                    "第 {turn} 回合固定事件 {id} 未进入事件链：{:?}",
+                    events.iter().map(|event| event.id).collect::<Vec<_>>()
+                );
+            }
+        }
+    }
+    println!("固定回合事件：2 / 24 / 48 / 72 / 77 均按剧本事件表进入事件链");
+    Ok(())
+}
+
+/// 事件特例：女将解锁 / 出行 5 段券 / 年末训练等级 / 宴会再发券
+#[test]
+fn event_special_cases() -> Result<()> {
+    let cfg = setup()?;
+    let data = load_onsen_data()?;
+    let mut game = controlled_game(&cfg, data)?;
+    let mut rng = StdRng::seed_from_u64(11);
+
+    // 女将解锁：进入已解锁态并获得休息心得
+    let unlock = engine_event(809050004)?;
+    game.apply_event(&unlock, 0, &mut rng)?;
+    if game.friend.out_state != umasim::game::FriendOutState::AfterUnlock {
+        bail!("女将解锁后应进入已解锁态：{:?}", game.friend.out_state);
+    }
+    if game.uma().flags.refresh_mind != 1 {
+        bail!(
+            "女将解锁应给 1 层休息心得，实际 {}",
+            game.uma().flags.refresh_mind
+        );
+    }
+
+    // 出行第 1–4 段：券 +1 且触发超回复
+    game.bathing.ticket_num = 0;
+    game.bathing.is_super_ready = false;
+    let outing = engine_event(809050011)?;
+    game.apply_event(&outing, 0, &mut rng)?;
+    if game.bathing.ticket_num != 1 || !game.bathing.is_super_ready {
+        bail!(
+            "出行第 1 段应发 1 张券并触发超回复：券={} ready={}",
+            game.bathing.ticket_num,
+            game.bathing.is_super_ready
+        );
+    }
+
+    // 出行第 5 段：按稀有度发券
+    game.bathing.ticket_num = 0;
+    game.base.friend.card_state = FriendCardState::SSR;
+    let outing_last = engine_event(809050015)?;
+    game.apply_event(&outing_last, 0, &mut rng)?;
+    if game.bathing.ticket_num != game.grant_ticket_num() {
+        bail!(
+            "出行第 5 段应按稀有度发 {} 张券，实际 {}",
+            game.grant_ticket_num(),
+            game.bathing.ticket_num
+        );
+    }
+
+    // 第 1/2 年末：全部训练等级 +1（每级 4 次计数）
+    game.base.train_level_count = [0; 5];
+    let year_end = engine_event(400012005)?;
+    game.apply_event(&year_end, 0, &mut rng)?;
+    for (train, count) in game.base.train_level_count.iter().enumerate() {
+        if *count != 4 {
+            bail!("年末事件后训练{train} 计数应为 4，实际 {count}");
+        }
+    }
+
+    // 第 3 年末（宴会）：再发一次券
+    game.bathing.ticket_num = 0;
+    game.base.friend.card_state = FriendCardState::SSR;
+    let banquet = engine_event(400012017)?;
+    game.apply_event(&banquet, 0, &mut rng)?;
+    if game.bathing.ticket_num != game.grant_ticket_num() {
+        bail!(
+            "宴会应按稀有度发 {} 张券，实际 {}",
+            game.grant_ticket_num(),
+            game.bathing.ticket_num
+        );
+    }
+    println!("事件特例：女将解锁 / 出行 5 段 / 年末训练等级 / 宴会发券 均生效");
+    Ok(())
+}
+
+/// 休息心得：每回合开始体力 +5，持续回合按表推进或结束
+#[test]
+fn refresh_mind_heals_each_turn() -> Result<()> {
+    let cfg = setup()?;
+    let data = load_onsen_data()?;
+    let mut game = controlled_game(&cfg, data)?;
+    let mut rng = StdRng::seed_from_u64(13);
+    game.uma_mut().max_vital = 100;
+    game.uma_mut().vital = 50;
+    game.uma_mut().flags.refresh_mind = 1;
+    game.update_refresh_mind(&mut rng);
+    if game.uma().vital != 55 {
+        bail!("休息心得应每回合 +5 体力，实际 {}", game.uma().vital);
+    }
+    let level = game.uma().flags.refresh_mind;
+    if level != 2 && level != 0 {
+        bail!("休息心得层数应推进或结束，实际 {level}");
+    }
+    println!("休息心得：体力 50 → {}，层数 1 → {level}", game.uma().vital);
+    Ok(())
+}
+
+/// 超回复溢出：体力高于上限时，非超回复回体只失效、消耗不把体力压回上限
+#[test]
+fn super_overflow_vital_semantics() -> Result<()> {
+    let cfg = setup()?;
+    let data = load_onsen_data()?;
+    let mut game = controlled_game(&cfg, data)?;
+    let mut rng = StdRng::seed_from_u64(29);
+
+    game.uma_mut().max_vital = 100;
+    game.uma_mut().vital = 150;
+
+    // ① 休息心得 +5：超上限时完全无效（不压回上限）
+    game.uma_mut().flags.refresh_mind = 1;
+    game.update_refresh_mind(&mut rng);
+    if game.uma().vital != 150 {
+        bail!("超上限时休息心得应无效，实际 {}", game.uma().vital);
+    }
+
+    // ② 事件消耗：150 − 15 = 135（不压回上限）
+    let drain = EventData::from_action_value(
+        990001,
+        "test_drain",
+        &ActionValue {
+            vital: -15,
+            ..Default::default()
+        },
+    );
+    game.apply_event(&drain, 0, &mut rng)?;
+    if game.uma().vital != 135 {
+        bail!("超上限时事件消耗应从当前体力扣，实际 {}", game.uma().vital);
+    }
+
+    // ③ 休息回体：超上限时无效
+    Action::Sleep.apply(&mut game, &mut rng)?;
+    if game.uma().vital != 135 {
+        bail!("超上限时休息回体应无效，实际 {}", game.uma().vital);
+    }
+
+    // ④ PR 消耗：135 − 15 = 120
+    Action::PR.apply(&mut game, &mut rng)?;
+    if game.uma().vital != 120 {
+        bail!("超上限时 PR 消耗应从当前体力扣，实际 {}", game.uma().vital);
+    }
+
+    // ⑤ 非超回复入浴：回体无效（不压回上限）
+    game.bathing.ticket_num = 1;
+    game.bathing.buff_remain_turn = 0;
+    game.bathing.is_super_ready = false;
+    Action::UseTicket(true).apply(&mut game, &mut rng)?;
+    if game.uma().vital != 120 {
+        bail!("超上限时非超回复入浴回体应无效，实际 {}", game.uma().vital);
+    }
+
+    // ⑥ 体力降到上限以下后恢复正常回体（95 + 5 = 100）
+    game.uma_mut().vital = 95;
+    game.uma_mut().flags.refresh_mind = 1;
+    game.update_refresh_mind(&mut rng);
+    if game.uma().vital != 100 {
+        bail!("体力低于上限后应正常回体到上限，实际 {}", game.uma().vital);
+    }
+
+    // ⑦ 临时上限从未写回常规上限
+    if game.uma().max_vital != 100 {
+        bail!(
+            "常规体力上限不应被超回复改写，实际 {}",
+            game.uma().max_vital
+        );
+    }
+
+    // ⑧ 超上限时提升上限的事件：真实上限照常增加，回体仍因超上限而无效
+    game.uma_mut().vital = 150;
+    let raise = EventData::from_action_value(
+        990002,
+        "test_max_up",
+        &ActionValue {
+            vital: 5,
+            max_vital: 5,
+            ..Default::default()
+        },
+    );
+    game.apply_event(&raise, 0, &mut rng)?;
+    if game.uma().max_vital != 105 {
+        bail!(
+            "事件应把真实上限 100 提到 105，实际 {}",
+            game.uma().max_vital
+        );
+    }
+    if game.uma().vital != 150 {
+        bail!(
+            "体力 150 仍高于新上限 105，回体应无效，实际 {}",
+            game.uma().vital
+        );
+    }
+
+    // ⑨ 新上限对常规回体生效：体力 100 → 105（封顶于真实上限）
+    game.uma_mut().vital = 100;
+    let heal = EventData::from_action_value(
+        990003,
+        "test_heal",
+        &ActionValue {
+            vital: 5,
+            ..Default::default()
+        },
+    );
+    game.apply_event(&heal, 0, &mut rng)?;
+    if game.uma().vital != 105 {
+        bail!(
+            "常规回体应封顶于提升后的上限 105，实际 {}",
+            game.uma().vital
+        );
+    }
+
+    // ⑩ 临时上限与真实上限互不影响（临时上限是剧本数据常量）
+    if game.data.super_effect.temp_max_vital != 150 {
+        bail!(
+            "临时体力上限应为数据常量 150，实际 {}",
+            game.data.super_effect.temp_max_vital
+        );
+    }
+    println!("超回复溢出：回体失效 / 消耗不压回 / 上限不变 均符合温泉口径");
+    Ok(())
+}
+
+/// 秘汤分身：温泉效果生效且卡种覆盖 ≥5 时，把已在训练中的人头再追加分配
+#[test]
+fn split_extra_distribution() -> Result<()> {
+    let cfg = setup()?;
+    let data = load_onsen_data()?;
+    let mut game = controlled_game(&cfg, data)?;
+    let mut rng = StdRng::seed_from_u64(17);
+    // 强制满足分身条件：效果生效 + 分身数 3 + 五卡种齐备
+    game.bathing.buff_remain_turn = 2;
+    game.onsen_buff.split = 3;
+    game.base.card_type_count = [1; 7];
+    game.distribute_all(&mut rng)?;
+    let before: usize = game.distribution().iter().map(|row| row.len()).sum();
+    game.distribute_extra_supports(&mut rng)?;
+    let after: usize = game.distribution().iter().map(|row| row.len()).sum();
+    if after <= before {
+        bail!("分身未追加分配：{before} → {after}");
+    }
+    if after - before > 3 {
+        bail!("分身追加数超过 split=3：{before} → {after}");
+    }
+
+    // 效果关闭时不追加
+    game.bathing.buff_remain_turn = 0;
+    let mid: usize = game.distribution().iter().map(|row| row.len()).sum();
+    game.distribute_extra_supports(&mut rng)?;
+    let end: usize = game.distribution().iter().map(|row| row.len()).sum();
+    if end != mid {
+        bail!("效果关闭后不应分身：{mid} → {end}");
+    }
+    println!("分身：{before} → {after}（split=3），效果关闭后不再追加");
+    Ok(())
+}
+
+/// 手写训练员守门链：入浴 → 治病 → 生涯赛 → 源泉 / 装备推荐表
+#[test]
+fn handwritten_trainer_guards() -> Result<()> {
+    let cfg = setup()?;
+    let data = load_onsen_data()?;
+    let mut game = controlled_game(&cfg, data)?;
+    let trainer = OnsenTrainer;
+    let mut decision = StdRng::seed_from_u64(1);
+
+    // 入浴：体力偏低 → 用券；体力充足且非超回复 → 不用券
+    let tickets = [Action::UseTicket(true), Action::UseTicket(false)];
+    game.uma_mut().vital = 40;
+    game.bathing.is_super_ready = false;
+    if trainer.select_action(&game, &tickets, &mut decision)? != 0 {
+        bail!("体力偏低时应用券");
+    }
+    game.uma_mut().vital = 100;
+    if trainer.select_action(&game, &tickets, &mut decision)? != 1 {
+        bail!("体力充足且无超回复时不应浪费券");
+    }
+    game.bathing.is_super_ready = true;
+    if trainer.select_action(&game, &tickets, &mut decision)? != 0 {
+        bail!("超回复就绪时应用券");
+    }
+
+    // 治病优先于训练
+    let actions = [Action::Train(0), Action::Clinic, Action::Sleep];
+    if trainer.select_action(&game, &actions, &mut decision)? != 1 {
+        bail!("有病时应优先治病");
+    }
+
+    // 生涯赛回合必比赛
+    let race_turn = (0..72)
+        .find(|turn| game.base.uma.is_race_turn(*turn))
+        .context("找不到生涯赛回合")?;
+    game.base.turn = race_turn;
+    let actions = [Action::Train(0), Action::Race];
+    if trainer.select_action(&game, &actions, &mut decision)? != 1 {
+        bail!("生涯赛回合应优先比赛");
+    }
+
+    // 源泉选择：按候选顺序取第一个
+    let actions = [Action::Dig(2), Action::Dig(3)];
+    if trainer.select_action(&game, &actions, &mut decision)? != 0 {
+        bail!("源泉选择应取候选顺序第一项");
+    }
+
+    // 装备升级：按回合推荐表（第 1 回合推荐土 = 地层 1）
+    game.base.turn = 1;
+    game.dig_level = [1, 1, 1];
+    let actions = [Action::Upgrade(0), Action::Upgrade(1), Action::Upgrade(2)];
+    if trainer.select_action(&game, &actions, &mut decision)? != 1 {
+        bail!("第 1 回合应推荐升级土（地层 1）");
+    }
+    // 推荐地层满级 → 退化为当前等级最低者（同等级取靠前）
+    game.dig_level = [1, 6, 1];
+    if trainer.select_action(&game, &actions, &mut decision)? != 0 {
+        bail!("推荐地层满级时应退化为等级最低的地层");
+    }
+    println!("训练员守门：入浴 / 治病 / 生涯赛 / 源泉 / 装备推荐表 均符合预期");
+    Ok(())
+}
+
+/// 手写训练员端到端：跑满回合且同种子逐位一致
+#[test]
+fn handwritten_trainer_full_game_deterministic() -> Result<()> {
+    let cfg = setup()?;
+    let data = load_onsen_data()?;
+    let run = |seed: u64| -> Result<(i32, i32, [i32; 5], i32, i32)> {
+        let mut game = controlled_game(&cfg, data.clone())?;
+        game.set_rule_master(seed);
+        let mut decision = StdRng::seed_from_u64(seed);
+        game.run_full_game(&OnsenTrainer, &mut decision)?;
+        Ok((
+            game.turn(),
+            game.dig_count,
+            game.uma().five_status,
+            game.uma().skill_pt,
+            game.bathing.ticket_num,
+        ))
+    };
+    let first = run(cfg.sim.seed)?;
+    let second = run(cfg.sim.seed)?;
+    if first != second {
+        bail!("同一主种子两次运行不一致：{first:?} vs {second:?}");
+    }
+    if first.0 != MAX_TURN {
+        bail!("未跑满回合：{}", first.0);
+    }
+    if first.1 <= 1 {
+        bail!("跑满一局未挖通任何源泉：已挖 {}", first.1);
+    }
+    println!(
+        "训练员端到端：回合 {}，已挖 {}，五维 {:?}，PT {}",
+        first.0, first.1, first.2, first.3
     );
     Ok(())
 }

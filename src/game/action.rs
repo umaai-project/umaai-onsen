@@ -76,15 +76,40 @@ impl OnsenGame {
                 Ok(())
             }
             Action::Race => {
-                // 生涯赛剧本倍率与源泉加成由 A6 补；此处用引擎默认系数
-                let scale = (100 + self.base.uma.race_bonus) as f64 / 100.0;
-                self.base.push_race_event(scale, 1.0)?;
+                // 比赛加成（支援卡赛后累加）＝引擎默认系数；剧本系数只叠在生涯赛上
+                let race_bonus = (100 + self.base.uma.race_bonus) as f64 / 100.0;
+                let (scale, pt_rate) = if self.base.uma.is_race_turn(self.base.turn) {
+                    // 温泉效果生效期间的生涯比赛加成（源泉 `career_race_bonus`）
+                    let buff_bonus = if self.bathing.buff_remain_turn > 0 {
+                        (100 + self.onsen_buff.career_race_bonus) as f64 / 100.0
+                    } else {
+                        1.0
+                    };
+                    // 决赛期（turn ≥ 72）不再乘剧本倍率
+                    let mut scenario = if self.turn < 72 {
+                        self.data.career_race_multiplier * buff_bonus
+                    } else {
+                        1.0
+                    };
+                    let mut pt_rate = 1.0;
+                    // 特殊角色 1063：出道赛后属性再 ×2.7、PT ×0.45（保留旧实现口径）
+                    if self.base.uma.chara_id() == 1063 && self.turn > 12 {
+                        scenario *= 2.7;
+                        pt_rate = 0.45;
+                    }
+                    (race_bonus * scenario, pt_rate)
+                } else {
+                    // 自选比赛不吃生涯倍率与源泉加成
+                    (race_bonus, 1.0)
+                };
+                self.base.push_race_event(scale, pt_rate)?;
                 // 目标比赛 25 点、自选比赛 15 点
                 self.run_dig_for(action, rng);
                 Ok(())
             }
             Action::Sleep => {
-                BaseAction::do_sleep(&mut self.base, rng)?;
+                // 超回复溢出时回体只失效，不把体力压回上限
+                self.with_vital_overflow(|game| BaseAction::do_sleep(&mut game.base, rng))?;
                 self.run_dig_for(action, rng);
                 Ok(())
             }
@@ -94,7 +119,8 @@ impl OnsenGame {
                 Ok(())
             }
             Action::Clinic => {
-                BaseAction::do_clinic(&mut self.base, rng)?;
+                // 超回复溢出时回体只失效，不把体力压回上限
+                self.with_vital_overflow(|game| BaseAction::do_clinic(&mut game.base, rng))?;
                 // 治病基础挖掘量为 0（仍需走一遍以结算进度）
                 self.run_dig_for(action, rng);
                 Ok(())

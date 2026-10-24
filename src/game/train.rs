@@ -42,7 +42,10 @@ impl OnsenGame {
         let value = self.calc_training_value(&buffs, train)?;
         // 以计算值（而非实际值）计算超回复消耗的体力
         let vital_cost = -value.vital;
-        self.uma_mut().add_value(&value);
+        // 超回复溢出时体力不被夹回上限：消耗从当前值扣
+        self.with_vital_overflow(|game| {
+            game.uma_mut().add_value(&value);
+        });
         self.base.train_level_count[train] += 1;
         // 通用后处理（羁绊 / 红点 / 加练 / 友人点击）走引擎可复用件
         self.base

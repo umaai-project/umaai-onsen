@@ -174,7 +174,9 @@ impl OnsenGame {
                 vital,
                 ..Default::default()
             };
-            self.uma_mut().add_value(&value);
+            self.with_vital_overflow(|game| {
+                game.uma_mut().add_value(&value);
+            });
             // 挖掘奖励的体力变化并入超回复累计与判定
             self.update_super_on_vital_cost(-vital, rng);
         }

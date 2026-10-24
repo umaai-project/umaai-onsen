@@ -1,8 +1,9 @@
 use anyhow::{Result, anyhow};
 use rand::rngs::StdRng;
+use umaai_core::Data;
 use umaai_core::rng::{StrategyRng, StreamTag, derive_seed};
 use umasim::game::base::RuleStreams;
-use umasim::game::{Game, StageId, Trainer};
+use umasim::game::{FriendOutState, Game, StageId, Trainer};
 
 use crate::game::OnsenGame;
 
@@ -92,17 +93,40 @@ impl OnsenGame {
                     self.pending_selection = true;
                     self.handle_pending_selection(trainer, decision, strategy)?;
                 }
-                // 新温泉解锁回合（年初）：再次进入选择流程
+                // 新温泉解锁回合（年初）：再次进入选择流程（与上一轮可同回合连做两轮）
                 if [24, 48, 65].contains(&self.turn) {
                     self.pending_selection = true;
                     self.handle_pending_selection(trainer, decision, strategy)?;
+                }
+                // 固定回合事件（引擎通用 + 温泉剧本）+ 友人出门 / 一般随机事件
+                let mut events = self.generate_onsen_events(&mut streams.event);
+                // 女将新年事件（第 24 回合，已解锁才触发）与结局事件（第 77 回合，训练后结算）
+                if self.friend.out_state == FriendOutState::AfterUnlock {
+                    if self.turn == 24 {
+                        events.push(Data::get()?.events.friend_events["newyear"].clone());
+                    } else if self.turn == 77 {
+                        self.unresolved_events
+                            .push(Data::get()?.events.friend_events["end"].clone());
+                    }
+                }
+                // 抽签（第 48 回合）与育成结束事件（第 77 回合）在训练后结算
+                if self.turn == 48 {
+                    self.unresolved_events
+                        .push(Data::get()?.system_event("ticket")?.clone());
+                }
+                if self.turn == 77 {
+                    self.unresolved_events
+                        .push(Data::get()?.system_event("ending")?.clone());
                 }
                 // 开局 / 合宿送券（2 / 36 / 60 回合）
                 if [2, 36, 60].contains(&self.turn) {
                     self.add_ticket(self.grant_ticket_num());
                 }
-                // A6 起：抽签、友人新年 / 结局事件、育成结束事件
-                let _ = (&mut streams.event, &mut streams.turn_fixed);
+                // 休息心得：每回合开始体力 +5
+                self.update_refresh_mind(&mut streams.event);
+                for event in &events {
+                    self.run_event(event, trainer, decision, &mut streams.event)?;
+                }
             }
             Stage::Distribute => {
                 // 温泉效果面板 / 旅馆档 / 挖掘力在回合分配前刷新（面板本身锁到用券为止）
@@ -111,8 +135,10 @@ impl OnsenGame {
                     self.reset_distribution();
                 } else {
                     self.distribute_all(&mut streams.turn_fixed)?;
-                    // 温泉效果期间红点发生率提升由 A5/A6 传入对应系数
+                    // 温泉效果期间红点发生率提升（`hint_bonus`）
                     self.distribute_hint(&mut streams.turn_fixed)?;
+                    // 秘汤分身：已分配人头再追加一次
+                    self.distribute_extra_supports(&mut streams.turn_fixed)?;
                 }
             }
             Stage::Bathing => {

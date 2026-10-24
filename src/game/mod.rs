@@ -1,6 +1,7 @@
 mod action;
 mod bath;
 mod dig;
+mod event;
 mod stage;
 mod train;
 mod traits;
@@ -150,6 +151,37 @@ impl OnsenGame {
         // 温泉效果面板与挖掘力初值（此后锁面板：仅用券或面板为空时重算）
         game.update_scenario_buff(false);
         Ok(game)
+    }
+
+    /// 在「超回复体力可突破上限」语义下执行一段引擎体力结算
+    ///
+    /// 温泉超回复会让体力临时高于常规上限（临时上限 150，**不写回** `max_vital`），而引擎
+    /// `Uma::add_value` 会把体力夹回 `max_vital`。这里在结算期间把上限抬到无夹取量级，
+    /// 结算后按温泉口径重算体力：
+    /// - 正向回体：结算后的上限仍高于体力时正常累加并封顶；体力已不低于上限时**完全无效**
+    ///   （只失效，不把体力压回上限）；
+    /// - 负向消耗：照常扣减，只以 0 为下限（不压回上限）；
+    /// - 上限自身的增量（事件 `max_vital` 加成）由引擎写入，这里只还原抬高的部分。
+    pub(crate) fn with_vital_overflow<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
+        // 抬高后的上限：引擎只做 `min` 夹取，取足够大的值即可让体力原样入账
+        const NO_CAP: i32 = i32::MAX / 2;
+        let vital_before = self.base.uma.vital;
+        let max_before = self.base.uma.max_vital;
+        self.base.uma.max_vital = NO_CAP;
+        let result = f(self);
+        let max_after = max_before + (self.base.uma.max_vital - NO_CAP);
+        let vital_delta = self.base.uma.vital - vital_before;
+        self.base.uma.max_vital = max_after;
+        self.base.uma.vital = if vital_delta > 0 {
+            if vital_before >= max_after {
+                vital_before
+            } else {
+                (vital_before + vital_delta).min(max_after)
+            }
+        } else {
+            (vital_before + vital_delta).max(0)
+        };
+        result
     }
 
     /// 追加一个人头（按当前人数分配人头序号）

@@ -35,8 +35,10 @@
 | `src/game/bath.rs` | 入浴（温泉效果应用 / 羁绊 / 临时上限）/ 超回复分档与判定 / PR 本体 / 红点生成 |
 | `src/game/train.rs` | 训练结算与温泉训练效果折算（inherent 辅助） |
 | `src/game/dig.rs` | 挖掘力 / 挖掘量 / 进度奖励 / 装备升级 / 源泉选择 / 赠券 |
+| `src/game/event.rs` | 事件生成（固定回合 / 友人出门 / 随机分布）/ 事件特例结算 / 休息心得 / 分身 |
 | `src/game/traits.rs` | 契约 impl（`Game` / `TrainingValueSource`，含 roster 与训练覆盖方法） |
 | `src/data.rs` | 剧本资产 schema、载入与载入期校验 |
+| `src/trainer.rs` | 手写训练员 `OnsenTrainer`（守门链 + 简化打分 + 事件贪心） |
 
 - **契约 trait impl 不可拆文件**：一个 trait 的 `impl` 必须整体落在同一文件（如 `deyilv` / `train_level` /
   `calc_training_value` 属 `impl Game`，只能随它一起放 `traits.rs`，不因「像是训练逻辑」就挪进 `train.rs`）；

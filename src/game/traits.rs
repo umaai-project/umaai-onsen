@@ -1,12 +1,11 @@
 use anyhow::{Result, anyhow};
 use rand::Rng;
 use rand::rngs::StdRng;
-use umaai_core::Data;
 use umaai_core::gamedata::{ActionValue, EventData};
 use umasim::game::base::BasePerson;
 use umasim::game::{
-    CardTrainingEffect, Game, Person, PersonType, StageId, SupportCard, Trainer,
-    TrainingBasicTable, TrainingValueSource, Uma,
+    CardTrainingEffect, Game, StageId, SupportCard, Trainer, TrainingBasicTable,
+    TrainingValueSource, Uma,
 };
 
 use crate::MAX_TURN;
@@ -115,15 +114,14 @@ impl Game for OnsenGame {
         }
     }
 
-    fn generate_events(&self, _rng: &mut impl Rng) -> Vec<EventData> {
-        // A6 起：剧本固定事件（温泉杯开始 / 年末大盛況 / 宴会）+ 通用随机事件链
-        Vec::new()
+    fn generate_events(&self, rng: &mut impl Rng) -> Vec<EventData> {
+        // 固定回合事件（引擎通用 + 温泉剧本）+ 友人出门 / 一般随机事件
+        self.generate_onsen_events(rng)
     }
 
     fn apply_event(&mut self, event: &EventData, choice: usize, rng: &mut impl Rng) -> Result<()> {
-        // A6 起：剧本事件分支（继承 / 切者 / 友人解锁等由引擎既有分支处理，剧本只补自己的）
-        let _ = self.base.apply_event(event, choice, rng);
-        Ok(())
+        // 引擎通用结算 + 温泉特例（继承 / 切者 / 女将 / 出行券 / 年末 / 宴会）
+        self.apply_onsen_event(event, choice, rng)
     }
 
     fn persons(&self) -> &[Self::Person] {
@@ -162,30 +160,7 @@ impl Game for OnsenGame {
     ///
     /// 引擎默认实现明确不含剧本修正，故此处整体覆写（发生率与卡面加成口径与引擎一致）。
     fn distribute_hint(&mut self, rng: &mut impl Rng) -> Result<()> {
-        let base_hint_rate = Data::get()?.consts.base_hint_rate / 100.0;
-        // 人头下标 ≠ 卡组下标：预抽 (card_id, 含剧本加成的 hint 概率加成)，循环内按 card_id 反查
-        let hint_bonus = self.onsen_buff.hint_bonus;
-        let hint_probs: Vec<(u32, i32)> = self
-            .deck()
-            .iter()
-            .map(|card| {
-                (
-                    card.card_id,
-                    card.card_value().hint_prob_increase + hint_bonus,
-                )
-            })
-            .collect();
-        for person in self.persons_mut() {
-            if person.person_type() == PersonType::Card {
-                let bonus = person
-                    .card_id()
-                    .and_then(|cid| hint_probs.iter().find(|(id, _)| *id == cid))
-                    .map_or(0, |(_, bonus)| *bonus);
-                let hint_prob = base_hint_rate * ((100 + bonus) as f64 / 100.0);
-                person.set_hint(rng.random_bool(hint_prob));
-            }
-        }
-        Ok(())
+        self.redistribute_hint(rng, false)
     }
 
     fn absent_rate_drop(&self) -> i32 {

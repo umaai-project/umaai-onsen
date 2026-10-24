@@ -48,7 +48,10 @@ impl OnsenGame {
     pub(crate) fn do_pr(&mut self, _rng: &mut impl Rng) -> Result<i32> {
         let value = self.data.pr_base_value.clone();
         let vital_cost = -value.vital;
-        self.uma_mut().add_value(&value);
+        // 超回复溢出时体力不被夹回上限：消耗从当前值扣
+        self.with_vital_overflow(|game| {
+            game.uma_mut().add_value(&value);
+        });
         self.add_ticket(1);
         Ok(vital_cost)
     }
@@ -83,15 +86,17 @@ impl OnsenGame {
         // 3. 体力恢复：超回复时体力上限取临时上限（可能高于常规上限）
         let super_vital = self.data.super_effect.vital;
         let super_pt = self.data.super_effect.pt;
-        let (max_hp, recovery) = if self.bathing.is_super_ready {
-            (
-                self.data.super_effect.temp_max_vital,
-                self.onsen_buff.vital + super_vital,
-            )
+        let vital_before = self.base.uma.vital;
+        self.uma_mut().vital = if self.bathing.is_super_ready {
+            // 超回复是唯一能把体力抬到常规上限之上的来源，封顶取临时上限
+            (vital_before + self.onsen_buff.vital + super_vital)
+                .min(self.data.super_effect.temp_max_vital)
+        } else if vital_before >= self.base.uma.max_vital {
+            // 已超上限时，非超回复的回体只失效，不把体力压回上限
+            vital_before
         } else {
-            (self.base.uma.max_vital, self.onsen_buff.vital)
+            (vital_before + self.onsen_buff.vital).min(self.base.uma.max_vital)
         };
-        self.uma_mut().vital = (self.base.uma.vital + recovery).min(max_hp);
         // 4. 干劲
         let motivation = self.onsen_buff.motivation;
         if motivation > 0 {
@@ -120,6 +125,50 @@ impl OnsenGame {
         // 6. 扣券，效果持续 2 回合
         self.bathing.ticket_num -= 1;
         self.bathing.buff_remain_turn = 2;
+        // 7. 秘汤分身：效果生效后把已在训练中的人头再追加分配一次
+        self.distribute_extra_supports(rng)?;
+        // 8. 红点发生率提升：对尚未点亮叹号的支援卡立即重判一次
+        if self.onsen_buff.hint_bonus > 0 {
+            self.redistribute_hint(rng, true)?;
+        }
+        Ok(())
+    }
+
+    /// 红点分配（温泉 `hint_bonus` 叠加到卡面发生率）
+    ///
+    /// `only_unmarked = true` 时只对当前没有叹号的人头重判（入浴瞬间发生率提升用）。
+    pub(crate) fn redistribute_hint(
+        &mut self,
+        rng: &mut impl Rng,
+        only_unmarked: bool,
+    ) -> Result<()> {
+        let base_hint_rate = Data::get()?.consts.base_hint_rate / 100.0;
+        // 人头下标 ≠ 卡组下标：预抽 (card_id, 含剧本加成的 hint 概率加成)，循环内按 card_id 反查
+        let hint_bonus = self.onsen_buff.hint_bonus;
+        let hint_probs: Vec<(u32, i32)> = self
+            .deck()
+            .iter()
+            .map(|card| {
+                (
+                    card.card_id,
+                    card.card_value().hint_prob_increase + hint_bonus,
+                )
+            })
+            .collect();
+        for person in self.persons_mut() {
+            if person.person_type() != PersonType::Card {
+                continue;
+            }
+            if only_unmarked && person.hint() {
+                continue;
+            }
+            let bonus = person
+                .card_id()
+                .and_then(|cid| hint_probs.iter().find(|(id, _)| *id == cid))
+                .map_or(0, |(_, bonus)| *bonus);
+            let hint_prob = base_hint_rate * ((100 + bonus) as f64 / 100.0);
+            person.set_hint(rng.random_bool(hint_prob));
+        }
         Ok(())
     }
 
