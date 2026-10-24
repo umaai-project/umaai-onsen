@@ -1,6 +1,7 @@
-//! 手动训练员（feature `manual`）：终端交互选择，人工验证剧本机制
+﻿//! 手动训练员：终端交互选择，人工验证剧本机制
 //!
-//! 依赖 `inquire`（交互式终端组件，仅终端宿主可用，故 feature 门控、不进默认依赖面）。
+//! 归 `onsen-cli`（终端前端业务：强交互、逻辑不复杂，crate 边界替代原先的 feature 门控）。
+//! 依赖 `inquire`（交互式终端组件，仅终端宿主可用）。
 //! 每次决策前打印局面面板（回合 / 体力 / 券 / 挖掘 / 旅馆档 + 彩色人头分布表），玩家从
 //! 候选中手选；取消（Esc / Ctrl+C）视为中止本局。事件选项按组展示各结果的概率与数值。
 //!
@@ -19,7 +20,7 @@ use umaai_core::Data;
 use umaai_core::gamedata::{ActionValue, EventChoice, EventData};
 use umasim::game::{Game, Person, PersonType, Trainer};
 
-use crate::game::{Action, OnsenGame};
+use onsen_core::game::{Action, OnsenGame};
 
 /// ANSI 前景色：友人 / 团队卡
 const ANSI_GREEN: &str = "32";
@@ -322,7 +323,7 @@ impl ManualTrainer {
                 } else {
                     format!("（{}%）", row.prob)
                 };
-                let value = crate::game::value_summary(&row.value);
+                let value = onsen_core::game::value_summary(&row.value);
                 if value.is_empty() {
                     format!("[{}]{prob}", result_name(row.result))
                 } else {

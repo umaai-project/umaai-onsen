@@ -1,26 +1,29 @@
-//! 终端样例外壳：装配一局温泉并打印
+//! 终端前端 bin `onsen`：装配一局温泉并打印
 //!
+//! 本 crate（`onsen-cli`）是终端前端业务：跑局入口 + 手动训练员（inquire 交互）；
+//! M2 增在线决策外壳 bin（`onsen-session`，thin，调 `onsen-ai`）。
 //! 真实剧本仓的入口按宿主需要自定（终端 / Web / Android 各自装配自己的 bin / lib）；本 bin
 //! 只是主线自测外壳，复用 `umaai-cli` 的呈现件（样例面，pub 面不承诺稳定）。
 //!
-//! 用法：`cargo run --release -- [训练员]`
-//! （缺省 `onsen`；可切 `random` 或 `manual`——后者为终端交互的手动训练员，需 feature
-//! `manual`，默认开启。数据根是代码级配置 [`DATA_ROOT`]，不暴露在命令行）
+//! 用法：`cargo run --release --bin onsen -- [训练员]`
+//! （缺省 `onsen`；可切 `random` 或 `manual`——后者为终端交互的手动训练员。
+//! 数据根是代码级配置 [`DATA_ROOT`]，不暴露在命令行）
 
 use std::process::ExitCode;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
+use onsen_core::{OnsenConfig, OnsenData, OnsenTrainer, build_game};
 use umaai::Config;
 use umaai::runner::Runner;
 use umaai_cli::frontend::{PrintFrontend, PrintOptions, Verbosity};
 use umaai_cli::render::term;
 use umaai_core::Data;
-
-#[cfg(feature = "manual")]
-use umaai_onsen::ManualTrainer;
-use umaai_onsen::{OnsenConfig, OnsenData, OnsenTrainer, build_game};
 use umasim::trainer::RandomTrainer;
+
+mod manual;
+
+use manual::ManualTrainer;
 
 /// 统一数据根（代码级配置）：引擎静态数据拷贝 + 剧本资产 + 双配置默认层
 ///
@@ -70,7 +73,6 @@ fn run() -> Result<()> {
             runner.run_game(game, &trainer, None)?
         }
         "random" => runner.run_game(game, &RandomTrainer, None)?,
-        #[cfg(feature = "manual")]
         "manual" => {
             // 手动验证：事件结算即时回显（青色）
             game.event_verbose = true;

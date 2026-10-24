@@ -10,21 +10,38 @@ use anyhow::{Context, Result, bail};
 use umaai::Config;
 use umaai_core::Data;
 
-use umaai_onsen::{BaselineRecord, OnsenConfig, OnsenData, OnsenTrainer, build_game};
+use onsen_core::{OnsenConfig, OnsenData, OnsenTrainer, build_game};
+use onsen_sim::BaselineRecord;
 
 /// 引擎数据根（统一数据目录 `data/`，引擎静态数据已拷入仓；可用 UMAAI_DATA_ROOT 覆盖）
 fn data_root() -> String {
-    std::env::var("UMAAI_DATA_ROOT").unwrap_or_else(|_| "data".to_string())
+    std::env::var("UMAAI_DATA_ROOT").unwrap_or_else(|_| default_data_dir())
 }
 
 /// 剧本数据根（与引擎数据同目录；可用 UMAAI_ONSEN_DATA_ROOT 单独覆盖）
 fn onsen_root() -> String {
-    std::env::var("UMAAI_ONSEN_DATA_ROOT").unwrap_or_else(|_| "data".to_string())
+    std::env::var("UMAAI_ONSEN_DATA_ROOT").unwrap_or_else(|_| default_data_dir())
+}
+
+/// 测试进程的 cwd 在 crate 目录：数据根按仓根定位（`CARGO_MANIFEST_DIR` 上溯两级）
+fn default_data_dir() -> String {
+    onsen_core::testing::data_dir()
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// 仓内基线文件路径（`baselines/` 留仓根）
+fn baseline_path() -> String {
+    onsen_core::testing::repo_root()
+        .join("baselines")
+        .join("onsen_default.json")
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// 固定种子跑一局并取基线记录
 fn run_baseline(cfg: &Config, data: &Arc<OnsenData>) -> Result<BaselineRecord> {
-    let onsen_cfg = OnsenConfig::load_with_overlay_file("data", ".")?;
+    let onsen_cfg = OnsenConfig::load_with_overlay_file(&onsen_root(), ".")?;
     let trainer = OnsenTrainer::new(onsen_cfg);
     let mut game = build_game(cfg, Arc::clone(data))?;
     BaselineRecord::run(cfg.sim.seed, &mut game, &trainer)
@@ -38,9 +55,9 @@ fn baseline_fixed_seed_matches_record() -> Result<()> {
     Data::init(&root)?;
     let data = Arc::new(OnsenData::load(onsen_root()).context("载入剧本数据失败")?);
     let record = run_baseline(&cfg, &data)?;
-    let path = "baselines/onsen_default.json";
+    let path = baseline_path();
     if std::env::var("UMAAI_ONSEN_UPDATE_BASELINE").ok().as_deref() == Some("1") {
-        record.save(path)?;
+        record.save(&path)?;
         println!("基线已重写：{path}（{}）", record.summary_line());
         return Ok(());
     }

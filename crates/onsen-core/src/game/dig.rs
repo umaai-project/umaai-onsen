@@ -150,20 +150,20 @@ impl OnsenGame {
         let data = Arc::clone(&self.data);
         let cur = self.current_onsen;
         let mut total_bonus = [0i32; 6];
-        for dig_type in 0..3 {
-            if value[dig_type] > 0 {
+        for (dig_type, dig_value) in value.iter().copied().enumerate() {
+            if dig_value > 0 {
                 // 奖励次数 = floor((进度 + 挖掘量) / 30) − floor(进度 / 30)
                 let old_count = self.dig_progress[cur][dig_type] / 30;
-                let new_count = (self.dig_progress[cur][dig_type] + value[dig_type]) / 30;
+                let new_count = (self.dig_progress[cur][dig_type] + dig_value) / 30;
                 let bonus_count = new_count - old_count;
                 if bonus_count > 0 {
                     for (slot, bonus) in total_bonus.iter_mut().zip(&data.dig_bonus[dig_type]) {
                         *slot += bonus * bonus_count;
                     }
                 }
-                self.dig_progress[cur][dig_type] += value[dig_type];
+                self.dig_progress[cur][dig_type] += dig_value;
             }
-            self.dig_remain[cur][dig_type] -= value[dig_type];
+            self.dig_remain[cur][dig_type] -= dig_value;
         }
         if total_bonus.iter().any(|slot| *slot != 0) {
             // 体力变化在奖励表末位（负数），供超回复分档累计

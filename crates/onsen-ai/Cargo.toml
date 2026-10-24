@@ -1,0 +1,9 @@
+# 温泉在线决策核心（M2 落位，本次立骨架）
+#
+# 计划内容：onsen 帧段解析 / 回写 + 引擎 `umaai::Session` 接线 + 决策循环
+# （消费 `onsen-core` 的手写 / 搜索训练员）。依赖待实现时再登记。
+[package]
+name = "onsen-ai"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true

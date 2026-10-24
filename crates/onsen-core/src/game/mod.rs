@@ -24,7 +24,9 @@ pub use action::Action;
 pub use stage::{BathingInfo, Stage};
 
 /// 事件 / 奖励值的紧凑摘要（字段序同引擎 `ActionValue` Display；hint 等级写作 `Hint+N`）
-pub(crate) fn value_summary(value: &ActionValue) -> String {
+///
+/// pub：手动训练员（`onsen-cli`）的事件选项回显复用。
+pub fn value_summary(value: &ActionValue) -> String {
     let mut parts: Vec<String> = Vec::new();
     for (i, &pt) in value.status_pt.iter().take(5).enumerate() {
         if pt != 0 {

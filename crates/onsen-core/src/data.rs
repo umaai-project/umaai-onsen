@@ -309,7 +309,7 @@ mod tests {
     /// 仓库自带数据可载入并通过校验
     #[test]
     fn test_load_repo_data() -> Result<()> {
-        let data = OnsenData::load("data")?;
+        let data = OnsenData::load(crate::testing::data_dir())?;
         assert_eq!(data.onsen_count(), 10);
         assert_eq!(data.hotel_effect.len(), 4);
         assert_eq!(data.scenario_events.len(), 5);
@@ -325,7 +325,8 @@ mod tests {
     /// 未知字段严格报错
     #[test]
     fn test_unknown_field_rejected() {
-        let text = std::fs::read_to_string("data/scenario_onsen.json").unwrap();
+        let text = std::fs::read_to_string(crate::testing::data_dir().join("scenario_onsen.json"))
+            .unwrap();
         let bad = text.replace("\"scenario_id\"", "\"scenario_id_typo\"");
         assert!(OnsenData::parse(&bad).is_err(), "未知字段应报错");
         println!("未知字段被拒绝");
@@ -334,7 +335,8 @@ mod tests {
     /// 旅馆档必须升序
     #[test]
     fn test_hotel_effect_sorted() {
-        let text = std::fs::read_to_string("data/scenario_onsen.json").unwrap();
+        let text = std::fs::read_to_string(crate::testing::data_dir().join("scenario_onsen.json"))
+            .unwrap();
         let mut data: OnsenData = serde_json::from_str(&text).unwrap();
         data.hotel_effect.reverse();
         assert!(data.validate().is_err(), "旅馆档逆序应报错");
@@ -344,7 +346,7 @@ mod tests {
     /// 效果求和与旅馆档
     #[test]
     fn test_sum_effects_and_hotel() -> Result<()> {
-        let data = OnsenData::load("data")?;
+        let data = OnsenData::load(crate::testing::data_dir())?;
         // 开局只有索引 0 已挖
         let state: Vec<bool> = (0..data.onsen_count()).map(|i| i == 0).collect();
         let eff = data.sum_effects(state.iter());

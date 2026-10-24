@@ -1,30 +1,40 @@
 # 测试一览（umaai-onsen）
 
 > 约定：单元测试（内联，私有细节 / 纯函数）用 `assert`；集成测试（`tests/`）**不用
-> `assert`**，用打印 + `Result` 返回值，失败由 `Err` / 非零退出码判定。测试工作目录为
-> 仓根；引擎数据根与剧本数据根默认同一**统一数据目录 `data/`**（引擎静态数据已拷入仓），
-> 可用 `UMAAI_DATA_ROOT` / `UMAAI_ONSEN_DATA_ROOT` 分别覆盖（如指回引擎仓
-> `../umaai_next/gamedata`）。`cargo test` 统一加 `--offline`，Release 档跑测试与 binary。
+> `assert`**，用打印 + `Result` 返回值，失败由 `Err` / 非零退出码判定。workspace 化后
+> 测试进程的 cwd 在各 crate 目录：数据根 / 基线路径统一经 `onsen_core::testing`
+> （`CARGO_MANIFEST_DIR` 上溯两级定位仓根）取，引擎数据与剧本数据默认同一**统一数据目录
+> `data/`**（引擎静态数据已拷入仓），可用 `UMAAI_DATA_ROOT` / `UMAAI_ONSEN_DATA_ROOT`
+> 分别覆盖。`cargo test` 统一加 `--offline`，Release 档跑测试与 binary。
 >
-> 最近整理：2026-10-24（A1–A8 / B1–B6 完成态，统一数据目录形态）。
+> 最近整理：2026-10-24（workspace 五 crate 化：core / sim / ai / cli / tools；测试计数不变 42 条）。
+
+## 0. 分 crate
+
+| crate | 测试面 |
+|---|---|
+| `onsen-core` | 内联单测（data / config）+ `tests/mechanics.rs`（机制 24 条） |
+| `onsen-sim` | `tests/baseline.rs`（固定种子基线 2 条） |
+| `onsen-cli` | 内联单测（manual 展示行）+ `tests/smoke.rs`（冒烟 4 条） |
+| `onsen-ai` / `onsen-tools` | 骨架，暂无测试 |
 
 ## 1. 单元测试（内联 `#[cfg(test)]`）
 
 | 文件 | 用例 | 守门内容 |
 |---|---|---|
-| `src/data.rs` | `test_load_repo_data` | 仓内剧本数据可载入并通过形状校验（10 源泉 / 4 旅馆档 / 5 剧本事件） |
+| `crates/onsen-core/src/data.rs` | `test_load_repo_data` | 仓内剧本数据可载入并通过形状校验（10 源泉 / 4 旅馆档 / 5 剧本事件） |
 | | `test_unknown_field_rejected` | 未知字段严格报错 |
 | | `test_hotel_effect_sorted` | 旅馆档必须按 `onsen_count` 升序 |
 | | `test_sum_effects_and_hotel` | 已挖源泉效果求和与旅馆档取值 |
-| `src/config.rs` | `test_parse_repo_default` | 默认层可解析且与 `OnsenConfig::default()` 同值 |
+| `crates/onsen-core/src/config.rs` | `test_parse_repo_default` | 默认层可解析且与 `OnsenConfig::default()` 同值 |
 | | `test_unknown_key_rejected` | 配置未知键严格报错 |
 | | `test_overlay_merge` | 覆盖层段缺失整段沿用、段内字段级覆盖 |
 | | `test_order_validation` | 顺序表索引越界 / 重复被拒 |
 | | `test_year_out_of_range` | `OnsenOrder::year` 越界报错 |
-| `src/manual.rs` | `test_choice_label` | 事件选项组展示行（档名 / 概率 / 数值拼接） |
+| `crates/onsen-cli/src/manual.rs` | `test_choice_label` | 事件选项组展示行（档名 / 概率 / 数值拼接） |
 | | `test_choice_label_empty_value` | 零数值结果只显示档名（交互本体无自动化测试，靠 bin `manual` 人工验证） |
 
-## 2. `tests/mechanics.rs`（机制单测，24 条）
+## 2. `crates/onsen-core/tests/mechanics.rs`（机制单测，24 条）
 
 受控局面 `controlled_game()`：清空链接加成、固定蓝因子，就地改写剧本数据后建局，
 不依赖宿主配置的卡组内容。
@@ -56,7 +66,7 @@
 | `handwritten_trainer_guards` | 守门链：入浴 / 治病 / 生涯赛 / 源泉顺序表 / 装备推荐表 |
 | `handwritten_trainer_full_game_deterministic` | 手写训练员端到端跑满回合且同种子逐位一致 |
 
-## 3. `tests/smoke.rs`（冒烟与可复现性，4 条）
+## 3. `crates/onsen-cli/tests/smoke.rs`（冒烟与可复现性，4 条）
 
 | 用例 | 守门内容 |
 |---|---|
@@ -65,7 +75,7 @@
 | `smoke_direct_drive_without_runner` | 直连驱动（不经 Runner）同样跑满 |
 | `smoke_view_snapshot_roundtrip` | `OnsenView` 快照可 JSON 序列化往返（A8 形态 A 取数口） |
 
-## 4. `tests/baseline.rs`（固定种子基线，2 条）
+## 4. `crates/onsen-sim/tests/baseline.rs`（固定种子基线，2 条）
 
 | 用例 | 守门内容 |
 |---|---|
@@ -74,7 +84,7 @@
 
 ## 5. 端到端入口（非测试）
 
-- bin：`cargo run --release -- [引擎数据根 [剧本数据根 [剧本配置根 [训练员]]]]`，
-  训练员 `onsen`（手写策略，缺省）/ `random`（引擎随机基线）/ `manual`（feature `manual`，
-  终端交互手动验证剧本机制，每次决策前打印局面面板）；终局打印评分 / 五维 / PT。
+- bin：`cargo run --release --bin onsen -- [训练员]`（onsen-cli crate，从仓根发起），
+  训练员 `onsen`（手写策略，缺省）/ `random`（引擎随机基线）/ `manual`（终端交互手动验证
+  剧本机制，每次决策前打印局面面板）；终局打印评分 / 五维 / PT。
 - 基线与 bin / Runner 路径同种子同序（规则主种子 + 决策流同源播种），逐位可比。

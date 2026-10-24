@@ -14,7 +14,7 @@ use rand::seq::IndexedRandom;
 use umaai_core::AttributeArray;
 use umaai_core::Data;
 use umaai_core::gamedata::{ActionValue, EventData};
-use umasim::game::{FriendOutState, Game, Person, PersonType, UmaFlagsExt};
+use umasim::game::{FriendOutState, Game, Person, PersonType, UmaFlagsExt, sample_bucket};
 
 use crate::game::OnsenGame;
 
@@ -56,7 +56,12 @@ impl OnsenGame {
             }
         }
         // ④ 一般随机事件：分布分桶 → 支援卡连续事件 / 马娘事件 / 掉心情
-        match sample_bucket(&engine.consts.get_event_distribution(), rng) {
+        // （分桶走引擎 pub 原语；权重和非法属数据坏档，本回合不出事件）
+        let bucket = match sample_bucket(&engine.consts.get_event_distribution(), rng) {
+            Ok(bucket) => bucket,
+            Err(_) => return vec![],
+        };
+        match bucket {
             0 => {
                 let count = self.base.deck.len().min(self.persons.len());
                 if count == 0 {
@@ -238,21 +243,4 @@ impl OnsenGame {
         }
         Ok(())
     }
-}
-
-/// 数值权重加权采样（返回桶下标）
-///
-/// 与引擎内部 `sample_bucket` 同语义（累积权重取首个 `> 采样值` 的桶），
-/// 引擎侧为 `pub(crate)` 不可复用，故在剧本侧保留一份最小实现。
-fn sample_bucket(weights: &[f64], rng: &mut impl Rng) -> usize {
-    let total: f64 = weights.iter().sum();
-    let chosen = rng.random::<f64>() * total;
-    let mut acc = 0.0;
-    for (index, weight) in weights.iter().enumerate() {
-        acc += weight;
-        if chosen < acc {
-            return index;
-        }
-    }
-    weights.len().saturating_sub(1)
 }

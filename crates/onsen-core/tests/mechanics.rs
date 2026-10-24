@@ -17,7 +17,7 @@ use umaai::Config;
 use umaai_core::gamedata::{ActionValue, EventData, TriggerType};
 use umaai_core::{Data, Ill};
 
-use umaai_onsen::{Action, MAX_TURN, OnsenData, OnsenGame, OnsenTrainer};
+use onsen_core::{Action, MAX_TURN, OnsenData, OnsenGame, OnsenTrainer};
 use umasim::game::{
     ActionEnum, CardTrainingEffect, FriendCardState, Game, InheritInfo, Person, PersonType, Trainer,
 };
@@ -25,12 +25,19 @@ use umasim::game::{
 /// 引擎数据根（统一数据目录 `data/`，引擎静态数据已拷入仓；可用 UMAAI_DATA_ROOT 覆盖，
 /// 如指回引擎仓 `../umaai_next/gamedata`）
 fn data_root() -> String {
-    std::env::var("UMAAI_DATA_ROOT").unwrap_or_else(|_| "data".to_string())
+    std::env::var("UMAAI_DATA_ROOT").unwrap_or_else(|_| default_data_dir())
 }
 
 /// 剧本数据根（与引擎数据同目录；可用 UMAAI_ONSEN_DATA_ROOT 单独覆盖）
 fn onsen_root() -> String {
-    std::env::var("UMAAI_ONSEN_DATA_ROOT").unwrap_or_else(|_| "data".to_string())
+    std::env::var("UMAAI_ONSEN_DATA_ROOT").unwrap_or_else(|_| default_data_dir())
+}
+
+/// 测试进程的 cwd 在 crate 目录：数据根按仓根定位（`CARGO_MANIFEST_DIR` 上溯两级）
+fn default_data_dir() -> String {
+    onsen_core::testing::data_dir()
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// 载入配置并初始化引擎数据（幂等）
@@ -263,11 +270,11 @@ fn dig_bonus_every_30_points() -> Result<()> {
     let before = (game.base.uma.five_status, game.base.uma.vital);
     game.do_dig(&[1, 0, 0], &mut rng);
     let after = (game.base.uma.five_status, game.base.uma.vital);
-    for slot in 0..5 {
-        if after.0[slot] - before.0[slot] != bonus[slot] {
+    for (slot, &expect) in bonus.iter().enumerate().take(5) {
+        if after.0[slot] - before.0[slot] != expect {
             bail!(
                 "29→30 奖励槽 {slot} 应为 {}，实际 {}",
-                bonus[slot],
+                expect,
                 after.0[slot] - before.0[slot]
             );
         }
@@ -285,11 +292,11 @@ fn dig_bonus_every_30_points() -> Result<()> {
     let before = (game.base.uma.five_status, game.base.uma.vital);
     game.do_dig(&[33, 0, 0], &mut rng);
     let after = (game.base.uma.five_status, game.base.uma.vital);
-    for slot in 0..5 {
-        if after.0[slot] - before.0[slot] != bonus[slot] * 2 {
+    for (slot, &expect) in bonus.iter().enumerate().take(5) {
+        if after.0[slot] - before.0[slot] != expect * 2 {
             bail!(
                 "28→61 奖励槽 {slot} 应为 {}，实际 {}",
-                bonus[slot] * 2,
+                expect * 2,
                 after.0[slot] - before.0[slot]
             );
         }

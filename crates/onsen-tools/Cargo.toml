@@ -1,0 +1,10 @@
+# 温泉外围工具（测卡 + 复盘，本次立骨架）
+#
+# 计划内容：测卡（引擎 `umaai-tools` 的 `DeckSpec` / `deck` / `arms` 内核 + `onsen-sim`
+# 的测量函数 + 必带女将的档组卡）与复盘（吃模拟器记录形态）。
+# 依赖与 bin（单 bin 多子命令）待实现时再登记。
+[package]
+name = "onsen-tools"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true

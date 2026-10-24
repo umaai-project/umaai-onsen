@@ -2,9 +2,12 @@
 
 `umaai-next` 引擎仓的温泉剧本（ごくらく♪ゆこま温泉郷 / scenarioId 12）独立实现仓。
 
-- **形态**：独立仓，以 path 依赖引用引擎仓 `umaai-core` / `umasim` / `umaai`（稳定期换 git tag）；
-  不 fork 引擎、不在引擎仓加剧本 crate。
-- **交付物**：lib 为主（剧本类型 + 装配 API + View 快照），bin 为辅（主线自测外壳）。
+- **形态**：workspace 五 crate（2026-10-24 拍板，按终端业务形态划分）——`onsen-core`（机制 +
+  训练员 + 装配，宿主稳定面）/ `onsen-sim`（模拟器与基线裁判）/ `onsen-ai`（在线决策核心，
+  M2 骨架）/ `onsen-cli`（终端前端与手动训练员）/ `onsen-tools`（测卡 / 复盘，骨架）；以 path
+  依赖引用引擎仓 `umaai-core` / `umasim` / `umaai`（稳定期换 git tag）；不 fork 引擎、不在引擎仓加剧本 crate。
+- **交付物**：lib 为主（`onsen-core` 的剧本类型 + 装配 API + View 快照），bin 为辅（`onsen-cli`
+  的跑局外壳）。
 - **数据**：剧本资产（`scenario_onsen.json`）与剧本配置段由本仓自持，根目录由宿主注入。
 
 ## 文档
@@ -43,3 +46,7 @@
   剧本资产 + `ai_config.toml` / `onsen_config.toml` 双默认层，原 `config/` 与仓根覆盖层并入），
   拷仓即跑；bin 数据根改为代码级常量 `DATA_ROOT`（不暴露命令行），参数只剩 `[训练员]`。
   基线数值不变（配置内容等价迁移）。M1 全部收口。
+- 2026-10-24（第六批，结构升格）：单包多 bin 升格为 **workspace 五 crate**（core / sim / ai /
+  cli / tools，按终端业务形态划分，为 M2 的搜索训练员与在线协议铺位）——`onsen-core` 为宿主
+  稳定面；`bench` 移 `onsen-sim`、`manual` 移 `onsen-cli`（crate 边界替代 feature 门控）；
+  ai / tools 立骨架。**纯移动重构**：测试计数不变（42 条）、基线逐位未位移。

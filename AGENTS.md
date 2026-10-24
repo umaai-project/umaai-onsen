@@ -20,33 +20,38 @@
 
 ## 代码结构
 
-**形态：单包多 bin，不改 workspace。** 剧本能力全在 lib；模拟 / 在线决策 / 测卡三类入口都是 **thin 外壳**
-（bin 只解析参数 + 调 lib + 退出码，逻辑进 lib 子模块）。重依赖用 feature 门控（`file-channel` / `parallel` / `manual`），
-**在对应 bin 真正用上前不要往 `Cargo.toml` 加 feature**。
+**形态：workspace 五 crate，按终端业务形态划分**（2026-10-24 拍板，取代 M1 的「单包多 bin」：
+M2 的搜索训练员与在线协议带来分叉的依赖面）。`onsen-core` 是**宿主稳定面**（机制 + 训练员 +
+装配，下游 Web / Android 只依赖它）；sim / ai / cli / tools 是独立业务面，互不依赖
+（cli 依赖 ai 供在线外壳）。重依赖各归其位（inquire 只在 cli；rayon / notify 待对应业务落地
+再登记），**在对应 bin 真正用上前不要往 `Cargo.toml` 加 feature / 依赖**。
 
-**lib 内部按功能区拆文件**（一目录一职责）：改机制时先落对应模块，**不要把新逻辑堆回 `lib.rs`**。
+**各 crate 内部按功能区拆文件**（一目录一职责）：改机制时先落对应模块，**不要把新逻辑堆回 `lib.rs`**。
 
-| 文件 | 职责 |
+| crate / 文件 | 职责 |
 |---|---|
-| `src/lib.rs` | 模块声明 + 对外重导出 + 常量（**不含实现**） |
-| `src/game/mod.rs` | 局面 `OnsenGame`（字段 / `Deref` / 建局 / 快照 `OnsenView`）+ 装配 `build_game` |
-| `src/game/stage.rs` | 阶段机 `Stage`（含 `StageId` 投影）/ `BathingInfo` / `stage_body` / 策略流派生 |
-| `src/game/action.rs` | `Action` + `Display` + `ActionEnum` + 动作分派 `apply_onsen_action` |
-| `src/game/bath.rs` | 入浴（温泉效果应用 / 羁绊 / 临时上限）/ 超回复分档与判定 / PR 本体 / 红点生成 |
-| `src/game/train.rs` | 训练结算与温泉训练效果折算（inherent 辅助） |
-| `src/game/dig.rs` | 挖掘力 / 挖掘量 / 进度奖励 / 装备升级 / 源泉选择 / 赠券 |
-| `src/game/event.rs` | 事件生成（固定回合 / 友人出门 / 随机分布）/ 事件特例结算 / 休息心得 / 分身 |
-| `src/game/traits.rs` | 契约 impl（`Game` / `TrainingValueSource`，含 roster 与训练覆盖方法） |
-| `src/data.rs` | 剧本资产 schema、载入与载入期校验 |
-| `src/config.rs` | 剧本配置段 `OnsenConfig`（H5 覆盖层语义载入与校验） |
-| `src/trainer.rs` | 手写训练员 `OnsenTrainer`（守门链 + 旧仓全量打分 + 事件贪心） |
-| `src/manual.rs` | 手动训练员 `ManualTrainer`（feature `manual`：终端交互人工验证） |
-| `src/bench.rs` | 数值基线 `BaselineRecord`（固定种子终局快照 / 载入 / 逐字段比对） |
+| `crates/onsen-core/src/lib.rs` | 模块声明 + 对外重导出 + 常量（**不含实现**） |
+| `crates/onsen-core/src/game/mod.rs` | 局面 `OnsenGame`（字段 / `Deref` / 建局 / 快照 `OnsenView`）+ 装配 `build_game` |
+| `crates/onsen-core/src/game/stage.rs` | 阶段机 `Stage`（含 `StageId` 投影）/ `BathingInfo` / `stage_body` / 策略流派生 |
+| `crates/onsen-core/src/game/action.rs` | `Action` + `Display` + `ActionEnum` + 动作分派 `apply_onsen_action` |
+| `crates/onsen-core/src/game/bath.rs` | 入浴（温泉效果应用 / 羁绊 / 临时上限）/ 超回复分档与判定 / PR 本体 / 红点生成 |
+| `crates/onsen-core/src/game/train.rs` | 训练结算与温泉训练效果折算（inherent 辅助） |
+| `crates/onsen-core/src/game/dig.rs` | 挖掘力 / 挖掘量 / 进度奖励 / 装备升级 / 源泉选择 / 赠券 |
+| `crates/onsen-core/src/game/event.rs` | 事件生成（固定回合 / 友人出门 / 随机分布）/ 事件特例结算 / 休息心得 / 分身 |
+| `crates/onsen-core/src/game/traits.rs` | 契约 impl（`Game` / `TrainingValueSource`，含 roster 与训练覆盖方法） |
+| `crates/onsen-core/src/{data,config}.rs` | 剧本资产 schema / 剧本配置段 `OnsenConfig`（H5 覆盖层语义） |
+| `crates/onsen-core/src/trainer.rs` | 手写训练员 `OnsenTrainer`（守门链 + 旧仓全量打分 + 事件贪心）；M2 增搜索训练员与 `FlatSearchGame` 适配器 |
+| `crates/onsen-core/src/testing.rs` | 测试定位件（仓根 / 数据根；仓内成员通用，不承诺稳定） |
+| `crates/onsen-sim` | 模拟器业务：基线裁判 `BaselineRecord`（`src/bench.rs`）与基线测试；批量跑局 / 测卡测量函数后续落位 |
+| `crates/onsen-ai` | 在线决策核心（M2 骨架）：onsen 帧段解析 / `Session` 接线 / 决策循环 |
+| `crates/onsen-cli` | 终端前端：bin `onsen`（跑局，切 `onsen` / `random` / `manual` 训练员）+ 手动训练员 `src/manual.rs`（inquire，crate 边界替代原 feature 门控） |
+| `crates/onsen-tools` | 外围工具（骨架）：测卡（引擎 `deck` / `arms` 内核 + sim 测量函数）+ 复盘 |
 
 - **契约 trait impl 不可拆文件**：一个 trait 的 `impl` 必须整体落在同一文件（如 `deyilv` / `train_level` /
   `calc_training_value` 属 `impl Game`，只能随它一起放 `traits.rs`，不因「像是训练逻辑」就挪进 `train.rs`）；
   可拆的只有 inherent `impl`。
-- **跨模块可见性**：被其它模块调用的方法标 `pub(crate)`；只有同模块内使用的才留私有（模块私有不对其它模块可见）。
+- **可见性**：crate 内跨模块调用的方法标 `pub(crate)`；跨 crate 消费的面标 `pub`（宿主稳定面 =
+  core 的装配 / `OnsenView` / 训练员）。
 - **阶段自持**：内部强类型 `Stage`，对外只投影 `StageId`（显式赋号，**改号 = 旧种子失效**）。
 - **不碰引擎**：引擎改动只允许 `docs/plan/m1_plan.md` §4 的钩子清单（带默认实现、非破坏），
   且必须在提交说明点明「默认行为等价」与否。
@@ -57,8 +62,8 @@
   （`events / cardDB / umaDB / constants / text_data_dict / manifest`，从引擎仓 `gamedata/`
   拷贝自持）+ 剧本资产 `scenario_onsen.json` + 双配置默认层（`ai_config.toml` / `onsen_config.toml`）。
   引擎数据升级时重拷本目录并重录基线。
-- bin 的数据根是**代码级常量**（`src/main.rs` 的 `DATA_ROOT`），不暴露在命令行；衍生开发
-  直接改常量或整目录替换 `data/`。引擎覆盖层约定保留：工作目录放同名
+- bin 的数据根是**代码级常量**（`crates/onsen-cli/src/main.rs` 的 `DATA_ROOT`，跑局从仓根发起），不暴露在命令行；
+  衍生开发直接改常量或整目录替换 `data/`。引擎覆盖层约定保留：工作目录放同名
   `ai_config.toml` / `onsen_config.toml` 存在才合并（字段级）。
 - lib 侧不写死路径：`OnsenData::load` / `OnsenConfig::load*` / `Data::init` 的根仍由调用方
   注入（bin / 测试 / 宿主各自决定指向）。
@@ -81,9 +86,12 @@
 
 1. **分层与断言**：单元测试（内联，私有细节 / 纯函数）用 `assert`；**集成测试（`tests/`）不用 `assert`**，
    用打印 + `Result` 返回值供 Agent 检查。
-2. 测试工作目录为**仓根**；引擎数据根默认 `../umaai_next/gamedata`，剧本数据根默认 `data`，
-   可用 `UMAAI_DATA_ROOT` / `UMAAI_ONSEN_DATA_ROOT` 覆盖。
-3. 机制改动需在 `tests/` 补对应机制单测；固定种子基线放 `baselines/`（剧本仓自持）。
+2. 测试进程的 cwd 在各 **crate 目录**（workspace 化后不再是仓根）：数据根 / 基线路径统一经
+   `onsen_core::testing`（`CARGO_MANIFEST_DIR` 上溯两级定位仓根）取；引擎数据与剧本数据同在
+   仓根 `data/`（已拷入自持），可用 `UMAAI_DATA_ROOT` / `UMAAI_ONSEN_DATA_ROOT` 覆盖。
+   引擎 `umaai-core::testing` 的 `env!` 固化的是引擎仓路径，**跨仓不可用**。
+3. 机制改动需在对应 crate 的 `tests/` 补机制单测（core 机制 → `onsen-core`；基线 → `onsen-sim`）；
+   固定种子基线放仓根 `baselines/`（剧本仓自持）。
 4. **Release 档**跑测试与 binary；`cargo test` 统一加 `--offline`。
 
 ## 工具使用

@@ -12,18 +12,25 @@ use umaai_cli::frontend::{PrintFrontend, PrintOptions, Verbosity};
 use umaai_cli::render::term;
 use umaai_core::Data;
 
-use umaai_onsen::{OnsenData, OnsenView, build_game};
+use onsen_core::{MAX_TURN, OnsenData, OnsenView, build_game};
 use umasim::game::Game;
 use umasim::trainer::RandomTrainer;
 
 /// 引擎数据根（统一数据目录 `data/`，引擎静态数据已拷入仓；可用 UMAAI_DATA_ROOT 覆盖）
 fn data_root() -> String {
-    std::env::var("UMAAI_DATA_ROOT").unwrap_or_else(|_| "data".to_string())
+    std::env::var("UMAAI_DATA_ROOT").unwrap_or_else(|_| default_data_dir())
 }
 
 /// 剧本数据根（与引擎数据同目录；可用 UMAAI_ONSEN_DATA_ROOT 单独覆盖）
 fn onsen_root() -> String {
-    std::env::var("UMAAI_ONSEN_DATA_ROOT").unwrap_or_else(|_| "data".to_string())
+    std::env::var("UMAAI_ONSEN_DATA_ROOT").unwrap_or_else(|_| default_data_dir())
+}
+
+/// 测试进程的 cwd 在 crate 目录：数据根按仓根定位（`CARGO_MANIFEST_DIR` 上溯两级）
+fn default_data_dir() -> String {
+    onsen_core::testing::data_dir()
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// 载入配置 + 剧本数据并初始化引擎数据（幂等）
@@ -57,17 +64,12 @@ fn smoke_runs_full_turn_count() -> Result<()> {
     let summary = run_once(&cfg, &data)?;
     println!(
         "回合 {}/{}，阶段 {}，评分 {}，PT {}，五维 {:?}",
-        summary.turn,
-        umaai_onsen::MAX_TURN,
-        summary.stages,
-        summary.score,
-        summary.pt,
-        summary.five_status
+        summary.turn, MAX_TURN, summary.stages, summary.score, summary.pt, summary.five_status
     );
-    if summary.turn != umaai_onsen::MAX_TURN {
+    if summary.turn != MAX_TURN {
         bail!("未跑满回合：{}", summary.turn);
     }
-    if summary.stages != (umaai_onsen::MAX_TURN as usize + 1) * 5 {
+    if summary.stages != (MAX_TURN as usize + 1) * 5 {
         bail!("阶段数不符：{}（应为 78 × 5 = 390）", summary.stages);
     }
     Ok(())

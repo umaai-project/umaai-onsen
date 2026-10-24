@@ -59,43 +59,44 @@
 
 ## 3. 剧本仓形态
 
-**单包多 bin，不改 workspace**：剧本能力全在 lib，模拟 / 在线决策 / 测卡三类入口都只是 thin 外壳——
-bin 只做参数解析 + 调 lib + 退出码（照引擎 `umaai-cli` 的 thin bin 形态），入口真正逻辑进 lib 子模块，
-以便 `tests/` 与下游宿主复用同一份逻辑。
+**workspace 五 crate，按终端业务形态划分**（2026-10-24 拍板落地，取代 M1 的「单包多 bin」；
+原「升格触发条件」被 M2 到来 + 用户拍板覆盖——搜索训练员与在线协议带来分叉的依赖面，
+sim 与 ai 业务不会同时进行、cli 与 tools 也是独立业务）。核心 `onsen-core` 为**宿主稳定面**
+（机制 + 训练员 + 装配，下游 Web / Android 只依赖它）；各业务 crate 互不依赖（cli 依赖 ai 供
+在线外壳）。M2 前已有的能力按此归位：训练员族在 core、基线裁判在 sim、手动训练员在 cli
+（crate 边界替代原 feature `manual` 门控）。
 
 ```
 umaai-onsen/
-├─ Cargo.toml            # 独立包 + 自带 [workspace] 根（将来加 crate 只在本表登记 members）
-├─ src/
-│  ├─ lib.rs             # lib：局面 / 动作 / 人头 / 训练员 / 数据 / View / 装配
-│  ├─ config.rs          # 剧本配置段（H5 覆盖层语义载入与校验）
-│  ├─ manual.rs          # 手动训练员（feature `manual`：终端交互人工验证）
-│  ├─ session.rs         # 在线决策：onsen 帧段解析 + 帧驱动接线（M2 落位，M1 不做）
-│  ├─ bench.rs           # 数值基线裁判（「变更探测器」，tests/ 与测卡入口共用）
-│  ├─ main.rs            # bin `umaai-onsen`＝模拟 / 自测外壳（复用 umaai-cli 呈现件）
-│  └─ bin/
-│     ├─ onsen-session.rs    # 在线决策外壳（thin，M2）
-│     └─ onsen-bench.rs      # 测卡外壳（thin）
+├─ Cargo.toml            # workspace 根（members + 统一依赖表；引擎 path 依赖只写一处）
+├─ crates/
+│  ├─ onsen-core/        # 宿主稳定面：game/* + data + config + trainer（手写）+ testing + 装配
+│  │                     #   M2 增：MCTS 训练员 + FlatSearchGame 适配器
+│  ├─ onsen-sim/         # 模拟器业务：基线裁判 BaselineRecord（src/bench.rs）+ 基线测试；
+│  │                     #   批量跑局 / 测卡测量函数后续落位；单 bin 多子命令待业务落地
+│  ├─ onsen-ai/          # 在线决策核心（M2 骨架）：onsen 帧段解析 / Session 接线 / 决策循环
+│  ├─ onsen-cli/         # 终端前端：bin `onsen`（跑局，切 onsen / random / manual）+ manual.rs；
+│  │                     #   M2 增在线外壳 bin `onsen-session`（thin）
+│  └─ onsen-tools/       # 外围工具（骨架）：测卡（引擎 deck / arms 内核 + sim 测量函数）+ 复盘；
+│                        #   单 bin 多子命令待业务落地
 ├─ data/                 # 统一数据目录（唯一发布库，拷仓即跑；2026-10-24 第五批定型）
 │  ├─ …引擎静态数据拷贝（events / cardDB / umaDB / constants / text_data_dict / manifest）
 │  ├─ scenario_onsen.json    # 剧本资产
 │  ├─ ai_config.toml         # 引擎配置默认层（卡组带女将）
 │  └─ onsen_config.toml      # 剧本专属配置段（源泉顺序等）
-├─ tests/                # 集成测试（Checker 风格；直接调 lib 的 session / bench 子模块）
-├─ baselines/            # 固定种子基线（剧本仓自持）
+├─ baselines/            # 固定种子基线（剧本仓自持，留仓根）
 └─ docs/{glossary.md,mechanism.md,plan/m1_plan.md,tests_overview.md}
 ```
 
-- **重依赖走 feature 门控**（沿引擎做法，不为入口建 crate）：`file-channel = ["umaai/file-channel"]`
-  （notify，在线决策用）、`parallel = ["umasim/parallel"]`（rayon，测卡用）、
-  `manual = ["dep:inquire"]`（终端交互，已落地、默认开启）；Web / Android 宿主取 lib 时用
-  `default-features = false` 剪掉。
+- **重依赖各归其位**（crate 边界替代 feature 门控）：inquire 只在 `onsen-cli`；rayon（搜索 /
+  测卡并行）、notify（在线文件通道）待对应业务落地时再进对应 crate；Web / Android 宿主只取
+  `onsen-core`（将来连同搜索件），不碰终端与工具面。
+- **测试定位**：workspace 化后测试进程 cwd 在 crate 目录，数据根 / 基线路径统一经
+  `onsen_core::testing`（`CARGO_MANIFEST_DIR` 上溯两级）取；引擎 `umaai-core::testing` 的
+  `env!` 固化引擎仓路径，跨仓不可用。
 - **统一数据目录**（2026-10-24 第五批定型）：`data/` 自持引擎静态数据拷贝 + 剧本资产 +
   双配置默认层，bin 数据根为代码级常量（不暴露命令行）；引擎覆盖层约定保留（工作目录同名
   文件存在才合并）。引擎数据升级时重拷并重录基线。
-- **升格 workspace 的触发条件**（任一出现再拆，不提前拆）：① 测卡 / 基线裁判要被 `tests/` 以外的仓复用，
-  且其依赖（rayon / tabled / lexopt）不该污染剧本 lib → 按引擎 `umaai-tools` 同款拆工具 crate；
-  ② 在线决策依赖面与 lib 不可调和（引异步运行时 / 网络栈）；③ 需要独立发布节奏或独立版本。
 - **数据与配置由宿主注入**：引擎数据根（`gamedata/`）与剧本数据各自独立；剧本侧只接根目录参数。
 - **阶段自持**：内部强类型枚举，对外只投影 `StageId`（显式赋号 0..4，改号＝旧种子失效）。
 - **三轴随机**：局面流 / 事件流取自 `BaseGame`，策略流剧本自持（每回合按 `(master, turn)` 派生）。

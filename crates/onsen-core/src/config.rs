@@ -1,4 +1,4 @@
-//! 剧本配置段（`onsen_config.toml`）：schema、载入与覆盖层合并
+﻿//! 剧本配置段（`onsen_config.toml`）：schema、载入与覆盖层合并
 //!
 //! 复用引擎 H5 钩子（[`OverlayConfig`] + [`parse_with_overlay`]）的语义：默认层字段齐全、
 //! 未知键严格报错；覆盖层同构、字段全 `Option`，段缺失整段沿用。根目录由宿主注入。
@@ -164,7 +164,7 @@ mod tests {
 
     /// 默认层文本（与仓内 `data/onsen_config.toml` 同构）
     fn base_toml() -> String {
-        std::fs::read_to_string("data/onsen_config.toml").unwrap()
+        std::fs::read_to_string(crate::testing::data_dir().join("onsen_config.toml")).unwrap()
     }
 
     /// 仓内默认层可解析且与 `Default` 同值

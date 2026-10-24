@@ -1,0 +1,19 @@
+# 温泉剧本机制本体 + 训练员 + 装配（宿主稳定面 crate）
+#
+# 局面 `OnsenGame` / 动作 / 数据 / 配置 / `OnsenView` 快照 / 手写训练员 / `build_game` 装配。
+# 下游宿主（Web / Android）只依赖本 crate（连同将来的搜索适配器与 MCTS 训练员）；
+# 手动训练员在 `onsen-cli`（终端交互件），基线裁判在 `onsen-sim`。
+[package]
+name = "onsen-core"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+umaai-core.workspace = true
+umasim.workspace = true
+umaai.workspace = true
+anyhow.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true

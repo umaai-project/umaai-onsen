@@ -12,8 +12,7 @@ use rand::rngs::StdRng;
 use serde::{Deserialize, Serialize};
 use umasim::game::Game;
 
-use crate::game::OnsenGame;
-use crate::trainer::OnsenTrainer;
+use onsen_core::{OnsenGame, OnsenTrainer};
 
 /// 固定种子一局的基线记录（剧本仓自持 JSON 的 schema）
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
