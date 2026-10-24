@@ -12,6 +12,7 @@
 use anyhow::{Result, anyhow};
 use inquire::Select;
 use rand::rngs::StdRng;
+use umaai_cli::render::panel::key_values;
 use umaai_cli::render::table::Grid;
 use umaai_cli::render::term;
 use umaai_core::Data;
@@ -68,50 +69,64 @@ impl ManualTrainer {
             view.dig_vital_cost,
         );
         let color = term::use_color(false);
-        format!("{head}\n{}", Self::distribution_grid(game, color))
+        let body = Self::distribution_grid(game, color);
+        let values = key_values(&Self::training_value_rows(game));
+        format!("{head}\n{body}\n{values}")
     }
 
-    /// 人头分布表：每训练一行——数值摘要一格、该训练位人物一格内多行
+    /// 人头分布表：每训练一列（列头「训练名 Lv 等级」），行对齐各列人物
     fn distribution_grid(game: &OnsenGame, color: bool) -> String {
-        let mut grid = Grid::new(["训练", "数值", "人物"]);
-        for train in 0..5 {
-            let head = format!("{} Lv{}", train_name(train), game.train_level(train));
-            let members: Vec<String> = game.distribution()[train]
-                .iter()
-                .filter(|index| **index >= 0)
-                .filter_map(|index| game.persons.get(*index as usize).map(|_| *index as usize))
-                .map(|index| person_label(game, index, train, color))
-                .collect();
-            let person_cell = if members.is_empty() {
-                "—".to_string()
-            } else {
-                members.join("\n")
-            };
-            grid.push([head, Self::training_value_cell(game, train), person_cell]);
+        let mut grid = Grid::new(
+            (0..5).map(|train| format!("{} Lv{}", train_name(train), game.train_level(train))),
+        );
+        let columns: Vec<Vec<String>> = (0..5)
+            .map(|train| {
+                game.distribution()[train]
+                    .iter()
+                    .filter(|index| **index >= 0)
+                    .filter_map(|index| game.persons.get(*index as usize).map(|_| *index as usize))
+                    .map(|index| person_label(game, index, train, color))
+                    .collect()
+            })
+            .collect();
+        let height = columns.iter().map(Vec::len).max().unwrap_or(0);
+        for row in 0..height {
+            grid.push((0..5).map(|train| columns[train].get(row).cloned().unwrap_or_default()));
         }
         grid.render(term::resolve_width(None))
     }
 
-    /// 训练数值摘要格：实际增加数值（引擎 `ActionValue` 紧凑摘要）+ 成功率（未满 100% 才显示）
+    /// 训练数值行（表格下方逐训练一行）：实际增加数值 + 成功率（未满 100% 才显示）
     ///
     /// 数值与 `OnsenTrainer` 打分同源（`calc_training_value` 的温泉上下层口径、卡片 buffs
     /// 的失败率），玩家手动决策与手写策略看到的是同一套数。
-    fn training_value_cell(game: &OnsenGame, train: usize) -> String {
-        let buffs = match game.calc_training_buff(train) {
-            Ok(buffs) => buffs,
-            Err(err) => return format!("（数值不可用: {err}）"),
+    fn training_value_rows(game: &OnsenGame) -> Vec<(String, String)> {
+        (0..5)
+            .map(|train| {
+                (
+                    train_name(train),
+                    Self::training_value_text(game, train).unwrap_or_else(|| "—".to_string()),
+                )
+            })
+            .collect()
+    }
+
+    /// 单个训练的实际增加数值文本（引擎 `ActionValue` 紧凑摘要）+ 成功率
+    fn training_value_text(game: &OnsenGame, train: usize) -> Option<String> {
+        let buffs = game.calc_training_buff(train).ok()?;
+        let value = game.calc_training_value(&buffs, train).ok()?;
+        let summary = value.to_string();
+        let mut text = if summary.is_empty() {
+            "—".to_string()
+        } else {
+            summary
         };
-        let value = match game.calc_training_value(&buffs, train) {
-            Ok(value) => value,
-            Err(err) => return format!("（数值不可用: {err}）"),
-        };
-        let mut lines = vec![value.to_string()];
         if let Ok(rate) = game.calc_training_failure_rate(&buffs, train)
             && rate > 0.0
         {
-            lines.push(format!("成功率{:.0}%", 100.0 - rate));
+            text.push_str(&format!(" 成功率{:.0}%", 100.0 - rate));
         }
-        lines.join("\n")
+        Some(text)
     }
 
     /// 事件选项组的展示行：组内各结果的档名、概率与数值
