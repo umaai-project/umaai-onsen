@@ -7,8 +7,10 @@
 use anyhow::{Result, anyhow};
 use inquire::Select;
 use rand::rngs::StdRng;
+use umaai_cli::render::panel::key_values;
+use umaai_core::Data;
 use umaai_core::gamedata::{EventChoice, EventData};
-use umasim::game::{Game, Trainer};
+use umasim::game::{Game, Person, Trainer};
 
 use crate::game::{Action, OnsenGame};
 
@@ -17,7 +19,7 @@ use crate::game::{Action, OnsenGame};
 pub struct ManualTrainer;
 
 impl ManualTrainer {
-    /// 决策面板：回合 / 马娘 / 温泉资源摘要
+    /// 决策面板：回合 / 马娘 / 温泉资源 / 人头分布摘要
     fn status_panel(game: &OnsenGame) -> String {
         let view = game.view();
         let uma = game.uma();
@@ -27,7 +29,7 @@ impl ManualTrainer {
         } else {
             "未就绪"
         };
-        format!(
+        let head = format!(
             "── 回合 {}/{} ── 体力 {}/{} 干劲 {} 五维 {:?}\n\
              温泉券 {} · 效果剩余 {} 回合（超回复 {super_state}）\n\
              挖掘：{}/{} 座已挖，当前 {} · 剩余 {:?} · 力 {:?} · 装备 {:?}\n\
@@ -49,7 +51,41 @@ impl ManualTrainer {
             view.hotel.deyilv,
             view.hotel.hint,
             view.dig_vital_cost,
-        )
+        );
+        format!("{head}\n{}", key_values(&Self::distribution_rows(game)))
+    }
+
+    /// 人头分布节：各训练位的人头（名字 / 羁绊 / 叹号 / 彩圈标记）
+    fn distribution_rows(game: &OnsenGame) -> Vec<(String, String)> {
+        let mut rows = Vec::with_capacity(5);
+        for train in 0..5 {
+            let members: Vec<String> = game.distribution()[train]
+                .iter()
+                .filter(|index| **index >= 0)
+                .filter_map(|index| {
+                    game.persons
+                        .get(*index as usize)
+                        .map(|person| (*index as usize, person))
+                })
+                .map(|(index, person)| {
+                    let mut label = format!("{}(羁绊{})", person.short_name(), person.friendship());
+                    if person.hint() {
+                        label.push('!');
+                    }
+                    if game.is_shining_at(index, train) {
+                        label.push('★');
+                    }
+                    label
+                })
+                .collect();
+            let value = if members.is_empty() {
+                "—".to_string()
+            } else {
+                members.join(" ")
+            };
+            rows.push((train_name(train), value));
+        }
+        rows
     }
 
     /// 事件选项组的展示行：组内各结果的档名、概率与数值
@@ -134,6 +170,14 @@ fn result_name(result: i32) -> &'static str {
         4 => "大失败",
         _ => "普通",
     }
+}
+
+/// 训练名（引擎常量表；未载入时退化为下标）
+fn train_name(train: usize) -> String {
+    Data::try_get().map_or_else(
+        || format!("训练{train}"),
+        |data| data.consts.train_name(train),
+    )
 }
 
 #[cfg(test)]
