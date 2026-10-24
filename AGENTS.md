@@ -53,8 +53,15 @@
 
 ## 数据与配置
 
-- 剧本资产 `data/scenario_onsen.json` 与剧本配置段 `config/onsen_config.toml` 由本仓自持；
-  引擎数据根（`gamedata/`）与剧本数据根分属两处，**都由宿主注入**，本仓不写死路径。
+- **统一数据目录 `data/`（本仓为唯一发布库，拷仓即跑）**：引擎静态数据
+  （`events / cardDB / umaDB / constants / text_data_dict / manifest`，从引擎仓 `gamedata/`
+  拷贝自持）+ 剧本资产 `scenario_onsen.json` + 双配置默认层（`ai_config.toml` / `onsen_config.toml`）。
+  引擎数据升级时重拷本目录并重录基线。
+- bin 的数据根是**代码级常量**（`src/main.rs` 的 `DATA_ROOT`），不暴露在命令行；衍生开发
+  直接改常量或整目录替换 `data/`。引擎覆盖层约定保留：工作目录放同名
+  `ai_config.toml` / `onsen_config.toml` 存在才合并（字段级）。
+- lib 侧不写死路径：`OnsenData::load` / `OnsenConfig::load*` / `Data::init` 的根仍由调用方
+  注入（bin / 测试 / 宿主各自决定指向）。
 
 ## Rust 编码规范
 

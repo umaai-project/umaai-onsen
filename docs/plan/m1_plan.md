@@ -68,22 +68,31 @@ umaai-onsen/
 ├─ Cargo.toml            # 独立包 + 自带 [workspace] 根（将来加 crate 只在本表登记 members）
 ├─ src/
 │  ├─ lib.rs             # lib：局面 / 动作 / 人头 / 训练员 / 数据 / View / 装配
+│  ├─ config.rs          # 剧本配置段（H5 覆盖层语义载入与校验）
+│  ├─ manual.rs          # 手动训练员（feature `manual`：终端交互人工验证）
 │  ├─ session.rs         # 在线决策：onsen 帧段解析 + 帧驱动接线（M2 落位，M1 不做）
-│  ├─ bench.rs           # 测卡 / 数值基线裁判（A4 起「变更探测器」复用同一条通路）
+│  ├─ bench.rs           # 数值基线裁判（「变更探测器」，tests/ 与测卡入口共用）
 │  ├─ main.rs            # bin `umaai-onsen`＝模拟 / 自测外壳（复用 umaai-cli 呈现件）
 │  └─ bin/
 │     ├─ onsen-session.rs    # 在线决策外壳（thin，M2）
 │     └─ onsen-bench.rs      # 测卡外壳（thin）
-├─ data/scenario_onsen.json   # 剧本资产（不进引擎仓）
-├─ config/onsen_config.toml   # 剧本专属配置段（源泉顺序等）
+├─ data/                 # 统一数据目录（唯一发布库，拷仓即跑；2026-10-24 第五批定型）
+│  ├─ …引擎静态数据拷贝（events / cardDB / umaDB / constants / text_data_dict / manifest）
+│  ├─ scenario_onsen.json    # 剧本资产
+│  ├─ ai_config.toml         # 引擎配置默认层（卡组带女将）
+│  └─ onsen_config.toml      # 剧本专属配置段（源泉顺序等）
 ├─ tests/                # 集成测试（Checker 风格；直接调 lib 的 session / bench 子模块）
 ├─ baselines/            # 固定种子基线（剧本仓自持）
 └─ docs/{glossary.md,mechanism.md,plan/m1_plan.md,tests_overview.md}
 ```
 
 - **重依赖走 feature 门控**（沿引擎做法，不为入口建 crate）：`file-channel = ["umaai/file-channel"]`
-  （notify，在线决策用）、`parallel = ["umasim/parallel"]`（rayon，测卡用）；`default` 开这两个，
-  Web / Android 宿主取 lib 时用 `default-features = false` 剪掉。
+  （notify，在线决策用）、`parallel = ["umasim/parallel"]`（rayon，测卡用）、
+  `manual = ["dep:inquire"]`（终端交互，已落地、默认开启）；Web / Android 宿主取 lib 时用
+  `default-features = false` 剪掉。
+- **统一数据目录**（2026-10-24 第五批定型）：`data/` 自持引擎静态数据拷贝 + 剧本资产 +
+  双配置默认层，bin 数据根为代码级常量（不暴露命令行）；引擎覆盖层约定保留（工作目录同名
+  文件存在才合并）。引擎数据升级时重拷并重录基线。
 - **升格 workspace 的触发条件**（任一出现再拆，不提前拆）：① 测卡 / 基线裁判要被 `tests/` 以外的仓复用，
   且其依赖（rayon / tabled / lexopt）不该污染剧本 lib → 按引擎 `umaai-tools` 同款拆工具 crate；
   ② 在线决策依赖面与 lib 不可调和（引异步运行时 / 网络栈）；③ 需要独立发布节奏或独立版本。

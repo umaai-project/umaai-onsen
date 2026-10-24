@@ -3,9 +3,9 @@
 //! 真实剧本仓的入口按宿主需要自定（终端 / Web / Android 各自装配自己的 bin / lib）；本 bin
 //! 只是主线自测外壳，复用 `umaai-cli` 的呈现件（样例面，pub 面不承诺稳定）。
 //!
-//! 用法：`cargo run --release -- [引擎数据根 [剧本数据根 [剧本配置根 [训练员]]]]`
-//! （缺省 `../umaai_next/gamedata` / `data` / `config` / `onsen`；训练员可切 `random` 或
-//! `manual`——后者为终端交互的手动训练员，需 feature `manual`，默认开启）
+//! 用法：`cargo run --release -- [训练员]`
+//! （缺省 `onsen`；可切 `random` 或 `manual`——后者为终端交互的手动训练员，需 feature
+//! `manual`，默认开启。数据根是代码级配置 [`DATA_ROOT`]，不暴露在命令行）
 
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -22,6 +22,12 @@ use umaai_onsen::ManualTrainer;
 use umaai_onsen::{OnsenConfig, OnsenData, OnsenTrainer, build_game};
 use umasim::trainer::RandomTrainer;
 
+/// 统一数据根（代码级配置）：引擎静态数据拷贝 + 剧本资产 + 双配置默认层
+///
+/// 拷仓即跑；衍生开发改数据布局时直接改本常量（或整目录替换 `data/`）。
+/// 引擎覆盖层约定保留：工作目录放同名 `ai_config.toml` / `onsen_config.toml` 存在才合并。
+const DATA_ROOT: &str = "data";
+
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -32,25 +38,19 @@ fn main() -> ExitCode {
     }
 }
 
-/// 装配一局并跑到底（配置与数据根都由宿主注入）
+/// 装配一局并跑到底（数据根为代码级配置；命令行只选训练员）
 fn run() -> Result<()> {
-    let mut args = std::env::args().skip(1);
-    let data_root = args
-        .next()
-        .unwrap_or_else(|| "../umaai_next/gamedata".to_string());
-    // 剧本数据根（scenario_onsen.json 所在目录）；缺省取仓内 data/
-    let onsen_root = args.next().unwrap_or_else(|| "data".to_string());
-    // 剧本配置根（onsen_config.toml 默认层）；缺省取仓内 config/
-    let config_root = args.next().unwrap_or_else(|| "config".to_string());
-    // 训练员：onsen（手写策略，默认）/ random（引擎随机基线）
-    let trainer_name = args.next().unwrap_or_else(|| "onsen".to_string());
+    // 训练员：onsen（手写策略，默认）/ random（引擎随机基线）/ manual（终端交互）
+    let trainer_name = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "onsen".to_string());
 
     // 配置两份同名不同位：默认层在数据根、覆盖层在当前目录（与引擎约定一致）
-    let cfg = Config::load_with_overlay_file(&data_root, ".").context("载入配置失败")?;
-    Data::init(&data_root)?;
-    let onsen_data = Arc::new(OnsenData::load(&onsen_root).context("载入剧本数据失败")?);
+    let cfg = Config::load_with_overlay_file(DATA_ROOT, ".").context("载入配置失败")?;
+    Data::init(DATA_ROOT)?;
+    let onsen_data = Arc::new(OnsenData::load(DATA_ROOT).context("载入剧本数据失败")?);
     let onsen_cfg =
-        OnsenConfig::load_with_overlay_file(&config_root, ".").context("载入剧本配置失败")?;
+        OnsenConfig::load_with_overlay_file(DATA_ROOT, ".").context("载入剧本配置失败")?;
 
     let consts = &Data::get()?.consts;
     let mut out = std::io::stdout();

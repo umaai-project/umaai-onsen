@@ -162,9 +162,9 @@ impl Default for OnsenConfig {
 mod tests {
     use super::*;
 
-    /// 默认层文本（与仓内 `config/onsen_config.toml` 同构）
+    /// 默认层文本（与仓内 `data/onsen_config.toml` 同构）
     fn base_toml() -> String {
-        std::fs::read_to_string("config/onsen_config.toml").unwrap()
+        std::fs::read_to_string("data/onsen_config.toml").unwrap()
     }
 
     /// 仓内默认层可解析且与 `Default` 同值

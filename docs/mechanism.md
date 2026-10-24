@@ -134,20 +134,24 @@
 
 ## 10. 装配与呈现（A8）
 
-- `build_game(cfg, data)`：从引擎配置 + 剧本数据装配一局（`src/game/mod.rs`）；引擎数据根、
-  剧本数据根、剧本配置根全部由宿主注入，本仓不写死路径。
-- 剧本配置段 `config/onsen_config.toml`（`src/config.rs`）：复用引擎 H5 钩子语义
+- `build_game(cfg, data)`：从引擎配置 + 剧本数据装配一局（`src/game/mod.rs`）；各根由
+  调用方注入（lib 不写死路径），bin / 测试 / 宿主都指向统一数据目录。
+- **统一数据目录 `data/`（唯一发布库形态，拷仓即跑）**：引擎静态数据拷贝（events /
+  cardDB / umaDB / constants / text_data_dict / manifest，升级时重拷并重录基线）+
+  剧本资产 `scenario_onsen.json` + 双配置默认层（`ai_config.toml` / `onsen_config.toml`）。
+- 剧本配置段 `data/onsen_config.toml`（`src/config.rs`）：复用引擎 H5 钩子语义
   （`OverlayConfig` + `parse_with_overlay`）——默认层字段齐全、未知键严格报错；覆盖层
   与默认层同名 `onsen_config.toml`、放宿主工作目录、存在才合并；当前含
   `[onsen_order]` 源泉选择优先顺序（按年，索引 0 基）。
 - `OnsenView`（`src/game/mod.rs`）：剧本资源快照的**单一取数口**（形态 A）：券与入浴、
   源泉与挖掘（状态 / 剩余 / 进度 / 挖掘力 / 装备）、旅馆档、效果面板；快照语义、
   `non_exhaustive`、不进契约 trait。
-- bin（`src/main.rs`）：`cargo run --release -- [引擎数据根 [剧本数据根 [剧本配置根 [训练员]]]]`，
-  训练员缺省 `onsen`（手写策略），可切 `random`（引擎随机基线）。
-- 仓根 `ai_config.toml`（宿主覆盖层）：温泉只支持女将友人卡（非保科友人卡建局即报错，
-  见 glossary §13.2 #13），覆盖层把引擎默认卡组的塔可换成女将（302764）；其余字段沿用
-  数据根默认层。
+- bin（`src/main.rs`）：`cargo run --release -- [训练员]`，训练员缺省 `onsen`（手写
+  策略），可切 `random`（引擎随机基线）与 `manual`（终端交互手动验证）；数据根是代码级
+  常量 `DATA_ROOT`（统一目录），不暴露在命令行。
+- `data/ai_config.toml` 默认层：温泉只支持女将友人卡（非保科友人卡建局即报错，见
+  glossary §13.2 #13），默认卡组已把引擎侧的塔可换成女将（302764）；工作目录放同名
+  `ai_config.toml` 可字段级覆盖（引擎约定）。
 
 ## 11. 手写策略（B5，`src/trainer.rs`）
 

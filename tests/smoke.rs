@@ -16,12 +16,12 @@ use umaai_onsen::{OnsenData, OnsenView, build_game};
 use umasim::game::Game;
 use umasim::trainer::RandomTrainer;
 
-/// 引擎数据根（本仓测试固定用并列引擎仓的数据；CI 按同样布局检出）
+/// 引擎数据根（统一数据目录 `data/`，引擎静态数据已拷入仓；可用 UMAAI_DATA_ROOT 覆盖）
 fn data_root() -> String {
-    std::env::var("UMAAI_DATA_ROOT").unwrap_or_else(|_| "../umaai_next/gamedata".to_string())
+    std::env::var("UMAAI_DATA_ROOT").unwrap_or_else(|_| "data".to_string())
 }
 
-/// 剧本数据根（本仓 `data/`；CI 与本地测试的工作目录都是仓根）
+/// 剧本数据根（与引擎数据同目录；可用 UMAAI_ONSEN_DATA_ROOT 单独覆盖）
 fn onsen_root() -> String {
     std::env::var("UMAAI_ONSEN_DATA_ROOT").unwrap_or_else(|_| "data".to_string())
 }

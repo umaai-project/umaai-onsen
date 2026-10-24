@@ -12,19 +12,19 @@ use umaai_core::Data;
 
 use umaai_onsen::{BaselineRecord, OnsenConfig, OnsenData, OnsenTrainer, build_game};
 
-/// 引擎数据根（本仓测试固定用并列引擎仓的数据；CI 按同样布局检出）
+/// 引擎数据根（统一数据目录 `data/`，引擎静态数据已拷入仓；可用 UMAAI_DATA_ROOT 覆盖）
 fn data_root() -> String {
-    std::env::var("UMAAI_DATA_ROOT").unwrap_or_else(|_| "../umaai_next/gamedata".to_string())
+    std::env::var("UMAAI_DATA_ROOT").unwrap_or_else(|_| "data".to_string())
 }
 
-/// 剧本数据根（本仓 `data/`；CI 与本地测试的工作目录都是仓根）
+/// 剧本数据根（与引擎数据同目录；可用 UMAAI_ONSEN_DATA_ROOT 单独覆盖）
 fn onsen_root() -> String {
     std::env::var("UMAAI_ONSEN_DATA_ROOT").unwrap_or_else(|_| "data".to_string())
 }
 
 /// 固定种子跑一局并取基线记录
 fn run_baseline(cfg: &Config, data: &Arc<OnsenData>) -> Result<BaselineRecord> {
-    let onsen_cfg = OnsenConfig::load_with_overlay_file("config", ".")?;
+    let onsen_cfg = OnsenConfig::load_with_overlay_file("data", ".")?;
     let trainer = OnsenTrainer::new(onsen_cfg);
     let mut game = build_game(cfg, Arc::clone(data))?;
     BaselineRecord::run(cfg.sim.seed, &mut game, &trainer)

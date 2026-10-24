@@ -2,11 +2,11 @@
 
 > 约定：单元测试（内联，私有细节 / 纯函数）用 `assert`；集成测试（`tests/`）**不用
 > `assert`**，用打印 + `Result` 返回值，失败由 `Err` / 非零退出码判定。测试工作目录为
-> 仓根；引擎数据根默认 `../umaai_next/gamedata`、剧本数据根默认 `data`，可用
-> `UMAAI_DATA_ROOT` / `UMAAI_ONSEN_DATA_ROOT` 覆盖。`cargo test` 统一加 `--offline`，
-> Release 档跑测试与 binary。
+> 仓根；引擎数据根与剧本数据根默认同一**统一数据目录 `data/`**（引擎静态数据已拷入仓），
+> 可用 `UMAAI_DATA_ROOT` / `UMAAI_ONSEN_DATA_ROOT` 分别覆盖（如指回引擎仓
+> `../umaai_next/gamedata`）。`cargo test` 统一加 `--offline`，Release 档跑测试与 binary。
 >
-> 最近整理：2026-10-24（A1–A8 / B1–B6 完成态）。
+> 最近整理：2026-10-24（A1–A8 / B1–B6 完成态，统一数据目录形态）。
 
 ## 1. 单元测试（内联 `#[cfg(test)]`）
 
@@ -69,7 +69,7 @@
 
 | 用例 | 守门内容 |
 |---|---|
-| `baseline_fixed_seed_matches_record` | 手写训练员 + 仓内默认数据 / 配置（仓根 `ai_config.toml` 覆盖层：默认卡组的塔可 → 女将）跑一局，与 `baselines/onsen_default.json` 逐字段一致；设 `UMAAI_ONSEN_UPDATE_BASELINE=1` 重写基线 |
+| `baseline_fixed_seed_matches_record` | 手写训练员 + 统一数据目录默认配置（`data/ai_config.toml` 默认层：卡组塔可 → 女将）跑一局，与 `baselines/onsen_default.json` 逐字段一致；设 `UMAAI_ONSEN_UPDATE_BASELINE=1` 重写基线 |
 | `baseline_reproducible` | 同种子两次直连驱动逐位一致 |
 
 ## 5. 端到端入口（非测试）
