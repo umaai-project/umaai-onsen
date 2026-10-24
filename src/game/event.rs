@@ -110,6 +110,16 @@ impl OnsenGame {
     ) -> Result<()> {
         let result = self.with_vital_overflow(|game| game.base.apply_event(event, choice, rng));
         if let Some(result) = result {
+            // 事件结算即时回显（青色；`event_verbose` 开启时打印，手动验证用）
+            if self.event_verbose {
+                let summary = crate::game::value_summary(&result.value);
+                let text = if summary.is_empty() {
+                    event.name.clone()
+                } else {
+                    format!("{}: {summary}", event.name)
+                };
+                println!("\x1b[36m事件 {text}\x1b[0m");
+            }
             // 体力消耗（负数）按计算值并入超回复分档
             if result.value.vital < 0 {
                 self.update_super_on_vital_cost(-result.value.vital, rng);

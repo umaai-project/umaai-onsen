@@ -174,6 +174,11 @@ impl OnsenGame {
                 vital,
                 ..Default::default()
             };
+            // 挖掘进度奖励回显（青色；`event_verbose` 开启时打印，手动验证用）
+            if self.event_verbose {
+                let summary = crate::game::value_summary(&value);
+                println!("\x1b[36m挖掘进度奖励: {summary}\x1b[0m");
+            }
             self.with_vital_overflow(|game| {
                 game.uma_mut().add_value(&value);
             });

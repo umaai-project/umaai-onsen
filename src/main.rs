@@ -54,13 +54,14 @@ fn run() -> Result<()> {
 
     let consts = &Data::get()?.consts;
     let mut out = std::io::stdout();
+    // 上游输出全静（Quiet 只出终局块）：逐回合状态与决策信息由剧本侧自持显示（手动面板 / 事件回显）
     let opts = PrintOptions {
-        verbosity: Verbosity::Normal,
+        verbosity: Verbosity::Quiet,
         width: term::resolve_width(None),
         color: false,
     };
     let mut fe = PrintFrontend::new(&mut out, opts, consts);
-    let game = build_game(&cfg, onsen_data)?;
+    let mut game = build_game(&cfg, onsen_data)?;
     // 规则主种子由 Runner 注入（`cfg.sim.seed`）：引擎两轴与剧本策略轴都按它派生
     let mut runner = Runner::new(&cfg, &mut fe)?;
     let summary = match trainer_name.as_str() {
@@ -70,7 +71,11 @@ fn run() -> Result<()> {
         }
         "random" => runner.run_game(game, &RandomTrainer, None)?,
         #[cfg(feature = "manual")]
-        "manual" => runner.run_game(game, &ManualTrainer, None)?,
+        "manual" => {
+            // 手动验证：事件结算即时回显（青色）
+            game.event_verbose = true;
+            runner.run_game(game, &ManualTrainer, None)?
+        }
         other => {
             return Err(anyhow!(
                 "未知训练员: {other}（可选 onsen / random / manual）"

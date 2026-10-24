@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use umaai::Config;
 use umaai_core::Array5;
 use umaai_core::rng::StrategyRng;
+use umaai_core::{Data, gamedata::ActionValue};
 use umasim::game::base::{BaseGame, BasePerson};
 use umasim::game::{Game, InheritInfo};
 
@@ -21,6 +22,38 @@ use crate::data::{HotelEffect, OnsenData, OnsenEffect};
 
 pub use action::Action;
 pub use stage::{BathingInfo, Stage};
+
+/// 事件 / 奖励值的紧凑摘要（字段序同引擎 `ActionValue` Display；hint 等级写作 `Hint+N`）
+pub(crate) fn value_summary(value: &ActionValue) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for (i, &pt) in value.status_pt.iter().take(5).enumerate() {
+        if pt != 0 {
+            let axis = Data::try_get()
+                .map(|data| data.consts.train_name(i))
+                .unwrap_or_else(|| format!("#{i}"));
+            parts.push(format!("{axis}{pt:+}"));
+        }
+    }
+    if value.status_pt[5] != 0 {
+        parts.push(format!("PT{:+}", value.status_pt[5]));
+    }
+    if value.vital != 0 {
+        parts.push(format!("体{:+}", value.vital));
+    }
+    if value.max_vital != 0 {
+        parts.push(format!("体上限{:+}", value.max_vital));
+    }
+    if value.motivation != 0 {
+        parts.push(format!("干劲{:+}", value.motivation));
+    }
+    if value.hint_level != 0 {
+        parts.push(format!("Hint{:+}", value.hint_level));
+    }
+    if value.friendship != 0 {
+        parts.push(format!("羁绊{:+}", value.friendship));
+    }
+    parts.join(" ")
+}
 
 /// 剧本资源快照（给前端的纯数据 View）
 ///
@@ -50,9 +83,9 @@ pub struct OnsenView {
     pub dig_level: [i32; 3],
     /// 各源泉本地层剩余挖掘量 `[源泉][砂 土 岩]`
     pub dig_remain: Vec<[i32; 3]>,
-    /// 各源泉本地层累计挖掘进度 `[源泉][砂 土 岩]`（每 30 点触发一次奖励）
+    /// 各源泉本地层累计挖掘进度 `[源泉][砂 土 岩]`（每 30 点触发一次挖掘奖励）
     pub dig_progress: Vec<[i32; 3]>,
-    /// 累计挖掘消耗体力（超回复分档用）
+    /// 累计挖掘消耗体力（超回复分档用；判定在 A5 启用）
     pub dig_vital_cost: i32,
     /// 挖掘完成后的待处理标志（装备升级 + 源泉选择）
     pub pending_selection: bool,
@@ -99,6 +132,8 @@ pub struct OnsenGame {
     pub onsen_buff: OnsenEffect,
     /// 当前旅馆档
     pub hotel: HotelEffect,
+    /// 事件结算即时回显开关（青色打印事件名与实际入账数值；手动验证用，默认关）
+    pub event_verbose: bool,
     /// 剧本静态数据（宿主注入；一局内不变，克隆共享）
     pub data: Arc<OnsenData>,
 }
@@ -167,6 +202,7 @@ impl OnsenGame {
             dig_level: [1; 3],
             dig_blue_count,
             dig_vital_cost: 0,
+            event_verbose: false,
             pending_selection: false,
             onsen_buff: OnsenEffect::default(),
             hotel: HotelEffect::default(),
