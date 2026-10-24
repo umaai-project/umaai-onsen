@@ -21,7 +21,7 @@
 ## 代码结构
 
 **形态：单包多 bin，不改 workspace。** 剧本能力全在 lib；模拟 / 在线决策 / 测卡三类入口都是 **thin 外壳**
-（bin 只解析参数 + 调 lib + 退出码，逻辑进 lib 子模块）。重依赖用 feature 门控（`file-channel` / `parallel`），
+（bin 只解析参数 + 调 lib + 退出码，逻辑进 lib 子模块）。重依赖用 feature 门控（`file-channel` / `parallel` / `manual`），
 **在对应 bin 真正用上前不要往 `Cargo.toml` 加 feature**。
 
 **lib 内部按功能区拆文件**（一目录一职责）：改机制时先落对应模块，**不要把新逻辑堆回 `lib.rs`**。
@@ -38,7 +38,10 @@
 | `src/game/event.rs` | 事件生成（固定回合 / 友人出门 / 随机分布）/ 事件特例结算 / 休息心得 / 分身 |
 | `src/game/traits.rs` | 契约 impl（`Game` / `TrainingValueSource`，含 roster 与训练覆盖方法） |
 | `src/data.rs` | 剧本资产 schema、载入与载入期校验 |
-| `src/trainer.rs` | 手写训练员 `OnsenTrainer`（守门链 + 简化打分 + 事件贪心） |
+| `src/config.rs` | 剧本配置段 `OnsenConfig`（H5 覆盖层语义载入与校验） |
+| `src/trainer.rs` | 手写训练员 `OnsenTrainer`（守门链 + 旧仓全量打分 + 事件贪心） |
+| `src/manual.rs` | 手动训练员 `ManualTrainer`（feature `manual`：终端交互人工验证） |
+| `src/bench.rs` | 数值基线 `BaselineRecord`（固定种子终局快照 / 载入 / 逐字段比对） |
 
 - **契约 trait impl 不可拆文件**：一个 trait 的 `impl` 必须整体落在同一文件（如 `deyilv` / `train_level` /
   `calc_training_value` 属 `impl Game`，只能随它一起放 `traits.rs`，不因「像是训练逻辑」就挪进 `train.rs`）；

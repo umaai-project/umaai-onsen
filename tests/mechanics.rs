@@ -14,8 +14,8 @@ use rand::Rng;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use umaai::Config;
-use umaai_core::Data;
 use umaai_core::gamedata::{ActionValue, EventData, TriggerType};
+use umaai_core::{Data, Ill};
 
 use umaai_onsen::{Action, MAX_TURN, OnsenData, OnsenGame, OnsenTrainer};
 use umasim::game::{
@@ -1230,10 +1230,10 @@ fn split_extra_distribution() -> Result<()> {
     let data = load_onsen_data()?;
     let mut game = controlled_game(&cfg, data)?;
     let mut rng = StdRng::seed_from_u64(17);
-    // 强制满足分身条件：效果生效 + 分身数 3 + 五卡种齐备
+    // 强制满足分身条件：效果生效 + 分身数 3 + 卡种 ≥5（3 训练种 + 友人 + 团队，钉住全卡种口径）
     game.bathing.buff_remain_turn = 2;
     game.onsen_buff.split = 3;
-    game.base.card_type_count = [1; 7];
+    game.base.card_type_count = [1, 1, 1, 0, 0, 1, 1];
     game.distribute_all(&mut rng)?;
     let before: usize = game.distribution().iter().map(|row| row.len()).sum();
     game.distribute_extra_supports(&mut rng)?;
@@ -1257,36 +1257,86 @@ fn split_extra_distribution() -> Result<()> {
     Ok(())
 }
 
-/// 手写训练员守门链：入浴 → 治病 → 生涯赛 → 源泉 / 装备推荐表
+/// 非保科友人卡建局报错：温泉只支持女将（chara 9050）作友人卡
+#[test]
+fn non_okami_friend_card_rejected() -> Result<()> {
+    let cfg = setup()?;
+    let data = load_onsen_data()?;
+    // 从引擎卡表找一张非女将友人卡（card_type=5 且 chara ≠ 9050）
+    let non_okami = Data::get()?
+        .card
+        .values()
+        .find(|card| card.card_type == 5 && card.chara_id != 9050)
+        .context("引擎卡表应有非女将友人卡")?;
+    let mut cards = cfg.sim.cards.clone();
+    cards[0] = non_okami.card_id;
+    let result = OnsenGame::newgame(
+        cfg.sim.uma,
+        &cards,
+        InheritInfo::default(),
+        cfg.race_grades()?,
+        Arc::new(data),
+    );
+    if result.is_ok() {
+        bail!(
+            "非女将友人卡（cardId {}，chara {}）建局应当报错",
+            non_okami.card_id,
+            non_okami.chara_id
+        );
+    }
+    println!(
+        "非女将友人卡被拒绝：{}（cardId {}，chara {}）",
+        non_okami.card_name, non_okami.card_id, non_okami.chara_id
+    );
+    Ok(())
+}
+
+/// 手写训练员守门链：入浴 → 治病 → 生涯赛 → 源泉顺序表 / 装备推荐表
 #[test]
 fn handwritten_trainer_guards() -> Result<()> {
     let cfg = setup()?;
     let data = load_onsen_data()?;
     let mut game = controlled_game(&cfg, data)?;
-    let trainer = OnsenTrainer;
+    let trainer = OnsenTrainer::default();
     let mut decision = StdRng::seed_from_u64(1);
 
-    // 入浴：体力偏低 → 用券；体力充足且非超回复 → 不用券
+    // 入浴：券 1 张且体力低于阈值 → 用券；体力充足 → 不用；券 ≥2 或超回复就绪 → 用
     let tickets = [Action::UseTicket(true), Action::UseTicket(false)];
+    game.bathing.ticket_num = 1;
+    game.bathing.buff_remain_turn = 0;
     game.uma_mut().vital = 40;
     game.bathing.is_super_ready = false;
     if trainer.select_action(&game, &tickets, &mut decision)? != 0 {
-        bail!("体力偏低时应用券");
+        bail!("体力低于阈值时应用券");
     }
     game.uma_mut().vital = 100;
     if trainer.select_action(&game, &tickets, &mut decision)? != 1 {
-        bail!("体力充足且无超回复时不应浪费券");
+        bail!("体力充足且仅 1 券时不应浪费券");
     }
+    game.bathing.ticket_num = 2;
+    if trainer.select_action(&game, &tickets, &mut decision)? != 0 {
+        bail!("券 ≥2 时应用券");
+    }
+    game.bathing.ticket_num = 1;
     game.bathing.is_super_ready = true;
     if trainer.select_action(&game, &tickets, &mut decision)? != 0 {
         bail!("超回复就绪时应用券");
     }
+    // 效果生效期间不用券（Bathing 阶段本就不会出现该候选，此处验证判定本身）
+    game.bathing.is_super_ready = false;
+    game.bathing.buff_remain_turn = 2;
+    if trainer.select_action(&game, &tickets, &mut decision)? != 1 {
+        bail!("温泉效果生效期间不应再用券");
+    }
+    game.bathing.buff_remain_turn = 0;
 
     // 治病优先于训练
+    game.uma_mut().flags.ill.insert(Ill::FAT);
     let actions = [Action::Train(0), Action::Clinic, Action::Sleep];
     if trainer.select_action(&game, &actions, &mut decision)? != 1 {
         bail!("有病时应优先治病");
     }
+    game.uma_mut().flags.ill = Ill::NONE;
 
     // 生涯赛回合必比赛
     let race_turn = (0..72)
@@ -1298,25 +1348,31 @@ fn handwritten_trainer_guards() -> Result<()> {
         bail!("生涯赛回合应优先比赛");
     }
 
-    // 源泉选择：按候选顺序取第一个
+    // 源泉选择：第 1 年顺序表 [1,3,2] → 候选 [Dig(2), Dig(3)] 命中 Dig(3)
+    game.base.turn = 5;
     let actions = [Action::Dig(2), Action::Dig(3)];
+    if trainer.select_action(&game, &actions, &mut decision)? != 1 {
+        bail!("源泉选择应按顺序表命中 Dig(3)");
+    }
+    // 顺序表全部不在候选（策略偏离表）→ 取候选首项
+    let actions = [Action::Dig(5), Action::Dig(6)];
     if trainer.select_action(&game, &actions, &mut decision)? != 0 {
-        bail!("源泉选择应取候选顺序第一项");
+        bail!("顺序表偏离时应取候选首项");
     }
 
-    // 装备升级：按回合推荐表（第 1 回合推荐土 = 地层 1）
-    game.base.turn = 1;
-    game.dig_level = [1, 1, 1];
+    // 装备升级：推荐表按当前源泉取（坚忍索引 2 → 推荐土 = 地层 1）
+    game.current_onsen = 2;
     let actions = [Action::Upgrade(0), Action::Upgrade(1), Action::Upgrade(2)];
     if trainer.select_action(&game, &actions, &mut decision)? != 1 {
-        bail!("第 1 回合应推荐升级土（地层 1）");
+        bail!("坚忍（索引 2）应推荐升级土（地层 1）");
     }
-    // 推荐地层满级 → 退化为当前等级最低者（同等级取靠前）
+    // 推荐地层满级不在候选 → 取首项（实际流程中候选本就不含满级装备）
     game.dig_level = [1, 6, 1];
+    let actions = [Action::Upgrade(0), Action::Upgrade(2)];
     if trainer.select_action(&game, &actions, &mut decision)? != 0 {
-        bail!("推荐地层满级时应退化为等级最低的地层");
+        bail!("推荐地层不在候选时应取首项");
     }
-    println!("训练员守门：入浴 / 治病 / 生涯赛 / 源泉 / 装备推荐表 均符合预期");
+    println!("训练员守门：入浴 / 治病 / 生涯赛 / 源泉顺序表 / 装备推荐表 均符合预期");
     Ok(())
 }
 
@@ -1329,7 +1385,8 @@ fn handwritten_trainer_full_game_deterministic() -> Result<()> {
         let mut game = controlled_game(&cfg, data.clone())?;
         game.set_rule_master(seed);
         let mut decision = StdRng::seed_from_u64(seed);
-        game.run_full_game(&OnsenTrainer, &mut decision)?;
+        let trainer = OnsenTrainer::default();
+        game.run_full_game(&trainer, &mut decision)?;
         Ok((
             game.turn(),
             game.dig_count,

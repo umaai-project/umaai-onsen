@@ -191,13 +191,12 @@ impl OnsenGame {
         }
     }
 
-    /// 秘汤汤驹的分身是否可用：卡种（速耐力根智）覆盖 ≥5 种
+    /// 秘汤汤驹的分身是否可用：「支援卡种类」按全部卡种（7 类，含友人 / 团队）非零类数 ≥ 5
     #[must_use]
     pub(crate) fn deck_can_split(&self) -> bool {
         self.base
             .card_type_count
             .iter()
-            .take(5)
             .filter(|count| **count > 0)
             .count()
             >= 5

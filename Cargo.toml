@@ -23,6 +23,13 @@ anyhow = "1.0.104"
 rand = { version = "0.9.5", features = ["std_rng"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.145"
+# 手动训练员的终端交互件（feature `manual` 门控；Web / Android 宿主 default-features = false 剪掉）
+inquire = { version = "0.9.4", optional = true }
+
+[features]
+default = ["manual"]
+# 手动训练员：终端交互选择，人工验证剧本机制用（bin `manual` 训练员）
+manual = ["dep:inquire"]
 
 # 本仓自带 workspace 根（独立仓）；并入别的 workspace 时删掉本表并登记 members
 [workspace]

@@ -25,6 +25,7 @@ pub use stage::{BathingInfo, Stage};
 /// 剧本资源快照（给前端的纯数据 View）
 ///
 /// 形态 A 五条纪律：单一取数口 / 只放引擎不知道的字段 / 快照语义 / `non_exhaustive` / 不进契约 trait。
+/// 覆盖温泉资源全集：券与入浴、源泉与挖掘、旅馆档、效果面板（何时取由宿主决定）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[non_exhaustive]
@@ -33,8 +34,32 @@ pub struct OnsenView {
     pub ticket_num: i32,
     /// 温泉效果剩余回合
     pub buff_remain_turn: i32,
+    /// 当前生效的温泉效果是否为超回复档
+    pub is_super: bool,
     /// 下次入浴是否超回复
     pub is_super_ready: bool,
+    /// 各源泉是否已挖通（索引 = 源泉索引）
+    pub onsen_state: Vec<bool>,
+    /// 当前正在挖掘的源泉索引
+    pub current_onsen: usize,
+    /// 已挖通源泉数（旅馆档基数）
+    pub dig_count: i32,
+    /// 挖掘力 `[砂 土 岩]`（蓝因子 + 属性档位 + 装备）
+    pub dig_power: [i32; 3],
+    /// 挖掘装备等级 `[砂 土 岩]`（1-6）
+    pub dig_level: [i32; 3],
+    /// 各源泉本地层剩余挖掘量 `[源泉][砂 土 岩]`
+    pub dig_remain: Vec<[i32; 3]>,
+    /// 各源泉本地层累计挖掘进度 `[源泉][砂 土 岩]`（每 30 点触发一次奖励）
+    pub dig_progress: Vec<[i32; 3]>,
+    /// 累计挖掘消耗体力（超回复分档用）
+    pub dig_vital_cost: i32,
+    /// 挖掘完成后的待处理标志（装备升级 + 源泉选择）
+    pub pending_selection: bool,
+    /// 当前旅馆档
+    pub hotel: HotelEffect,
+    /// 温泉效果面板（已挖源泉效果之和；锁面板语义）
+    pub onsen_buff: OnsenEffect,
 }
 
 /// 剧本局面
@@ -196,7 +221,19 @@ impl OnsenGame {
         OnsenView {
             ticket_num: self.bathing.ticket_num,
             buff_remain_turn: self.bathing.buff_remain_turn,
+            is_super: self.bathing.is_super,
             is_super_ready: self.bathing.is_super_ready,
+            onsen_state: self.onsen_state.clone(),
+            current_onsen: self.current_onsen,
+            dig_count: self.dig_count,
+            dig_power: self.dig_power,
+            dig_level: self.dig_level,
+            dig_remain: self.dig_remain.clone(),
+            dig_progress: self.dig_progress.clone(),
+            dig_vital_cost: self.dig_vital_cost,
+            pending_selection: self.pending_selection,
+            hotel: self.hotel,
+            onsen_buff: self.onsen_buff,
         }
     }
 }

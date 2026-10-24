@@ -17,14 +17,23 @@
 //! - **主种子必注入**：`set_rule_master` 是唯一注入点，未注入就推进即报错；
 //! - **数据与配置由宿主注入**：本 crate 不写死路径。
 //!
-//! 当前进度：M1a A6 与 M1b B1–B4 剧本机制已完成；A7 手写训练员最小版已落地，A8 装配与呈现待做。
+//! 当前进度：M1a A1–A8 与 M1b B1–B6 已完成（机制文档见 `docs/mechanism.md`，测试一览见
+//! `docs/tests_overview.md`，固定种子基线见 `baselines/`）。
 
+pub mod bench;
+pub mod config;
 pub mod data;
 pub mod game;
+#[cfg(feature = "manual")]
+pub mod manual;
 pub mod trainer;
 
+pub use bench::BaselineRecord;
+pub use config::{OnsenConfig, OnsenOrder};
 pub use data::{HotelEffect, OnsenData, OnsenEffect, OnsenInfo, SuperEffect};
 pub use game::{Action, BathingInfo, OnsenGame, OnsenView, Stage, build_game};
+#[cfg(feature = "manual")]
+pub use manual::ManualTrainer;
 pub use trainer::OnsenTrainer;
 
 /// 育成最大回合（0 基，78 回合）

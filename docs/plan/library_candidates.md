@@ -40,7 +40,8 @@
 | A9 | `Game::default_do_train(...)`：失败判定 → 数值 → 训练计数的主体 provided | 与 A2 组合后，剧本只需补「挖掘 / 超回复」等特效 | **与 A2 二选一或组合**，M1b 定（M1 先按「剧本自写 do_train + 复用 A2」实现） |
 | A10 | leaf 估值 seam：`Evaluator<G>` / `LeafEvaluator` 关联类型（配 `SUPPORTS_TRUNCATED_LEAF`） | 门禁已在（`max_depth > 0` 硬拒未声明者），估值器属延后项 | **M2**（见搜索笔记） |
 | A11 | 搜索「option / 分段」支持：把搜索边界从终局改到剧本决策点（选泉周期） | 无；旧仓只能靠 `max_depth` 与终局 rollout | **先测量后定**（见搜索笔记 §4） |
-| A13 | hint **发生次数**（`1 + hint_count_bonus`）与**红点等级**（`hint_level`，受 `max_hint_per_card` 限制）的可复用件 | 旧仓温泉 `do_hint` 与拉面 `action.rs` 各写一份（含次数循环、等级上限、`has_friendship` 时清零羁绊、属性/技能二选一）；新仓只在 `BasicGame::do_train` 内联 | **候选**：温泉 M1 需要（超回复红点循环走它），拉面已有第二份实现 → 建议 M1b 抽成 `BaseGame` 侧可复用方法（不占契约方法名）。**注意它只处理「次数 / 等级」，发生率仍由 A3 负责** |
+| A13 | hint **发生次数**（`1 + hint_count_bonus`）与**红点等级**（`hint_level`，受 `max_hint_per_card` 限制）的可复用件 | 旧仓温泉 `do_hint` 与拉面 `action.rs` 各写一份（含次数循环、等级上限、`has_friendship` 时清零羁绊、属性/技能二选一）；新仓只在 `BasicGame::do_train` 内联 | **已拍板（2026-10-24）**：口径进引擎默认件——`default_after_train` 的红点部分吸收次数 / 等级双截断 / `total_hints` 累计 / 超限只给属性（已记引擎 open_items #29，暂不实施）；**落地时默认行为不等价**（BasicGame 红点节奏变化、基线位移），须引擎 changelog + 基线重录。发生率修正仍归 A3（剧本覆写 `distribute_hint`），口径不变 |
+| A14 | 支援卡连续事件的**人选候选集**（仅 `Card` 类型可用人头、均匀抽、空则无事件） | 旧温泉在调用侧筛类型；新仓 `event.rs` 桶 0 是「前 N 随机重试 16 次、不筛类型」的降级版（女将进候选、重试耗尽仍生成）；引擎把选人留给调用方 | **已拍板方向（2026-10-24）**：候选集语义下沉引擎（已记引擎 open_items #31，暂不实施）；落地后本仓桶 0 改用引擎件并重录基线（候选集变化导致数值位移）。本轮按旧仓口径保持「先记下」 |
 | A12 | **`apply_event` 的 `scale` / `vital_scale`（讨论项）** | 现 `BaseGame::apply_event` 内部对友人事件应用 `event_bonus` / `vital_bonus`；剧本若自写 `apply_event` 就会丢掉这段，或需复制 | **待讨论**。两个形态：①`BaseGame::apply_event(event, choice, scale, vital_scale, rng)`（默认 1.0，友人加成仍在内部）；②另出可复用件 `apply_event_value(...)` 供剧本组合。倾向 ①，与 A1 的 `scale` 口径统一 |
 
 ***
@@ -49,7 +50,7 @@
 
 | # | 候选机制 | 现状 / 痛点 | 结论 |
 |---|---|---|---|
-| B1 | 带权分桶采样 `sample_bucket` 提为公共原语 | 现为 `umasim::game::traits` 私有函数（与 `WeightedIndex` 逐位一致）；更细粒度的层级抽签也会需要 | **可**（小、纯函数） |
+| B1 | 带权分桶采样 `sample_bucket` 提为公共原语 | 现为 `umasim::game::traits` 私有函数（与 `WeightedIndex` 逐位一致）；更细粒度的层级抽签也会需要 | **已拍板（2026-10-24）**：pub 化（已记引擎 open_items #30，暂不实施）；纯函数、行为无变化（等价改动）；落地后本仓删 `event.rs` 的本地最小复制 |
 | B2 | 「阈值表分档」查表原语（阈值 → 档位 → 值，含越界夹取） | 温泉 `super_probs`、属性档位、失败率阈值都是同一个 `while` 递减循环 | **存疑，暂不做**（用户批注）：各剧本阈值表不同，抽出来收益不抵抽象成本；剧本内用 3 行循环即可 |
 | B3 | 「累计进度按阈值进位」原语 | 温泉挖掘每 30 点奖励一次（29→65 触发两次） | **剧本专属机制**，不进通用库 |
 | B4 | 数据表形状校验 | 旧仓 `try_into().expect()` 运行期 panic | **不做通用件**（用户批注）：剧本用 Rust 基本写法加固即可 |
@@ -92,4 +93,5 @@
 | **M2** | A10 / A11 / C3 | 随搜索形态一起定 |
 | **待定** | A12 | `apply_event` 的 scale / vital_scale 形态（讨论项） |
 | **M1b** | A13 | hint 次数 / 等级可复用件（发生率仍归 A3） |
+| **2026-10-24** | A13 / B1 | 方向已拍板、引擎侧待实施（open_items #29 / #30，本轮只登记不修改）：A13 口径进引擎 `default_after_train`（**默认行为不等价**，落地时引擎基线重录）；B1 `sample_bucket` pub 化（等价改动），本仓随后删 `event.rs` 本地复制 |
 | **不做** | A7 / B2 / B3 / B4 / C4 / D1–D6 | 见上表理由 |

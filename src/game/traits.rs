@@ -4,13 +4,16 @@ use rand::rngs::StdRng;
 use umaai_core::gamedata::{ActionValue, EventData};
 use umasim::game::base::BasePerson;
 use umasim::game::{
-    CardTrainingEffect, Game, StageId, SupportCard, Trainer, TrainingBasicTable,
+    CardTrainingEffect, Game, PersonType, StageId, SupportCard, Trainer, TrainingBasicTable,
     TrainingValueSource, Uma,
 };
 
 use crate::MAX_TURN;
 use crate::game::stage::Stage;
 use crate::game::{Action, OnsenGame};
+
+/// 女将（保科健子）角色 ID：温泉只支持她作友人卡（口径见 glossary §13.2 #13）
+const OKAMI_CHARA_ID: u32 = 9050;
 
 impl Game for OnsenGame {
     type Person = BasePerson;
@@ -140,6 +143,17 @@ impl Game for OnsenGame {
             .iter()
             .map(BasePerson::try_from)
             .collect::<Result<Vec<_>>>()?;
+        // 温泉只支持女将友人卡：非保科友人卡建局即报错（不做 OtherFriend 降级）
+        for (slot, person) in persons.iter().enumerate() {
+            if person.person_type == PersonType::ScenarioCard && person.chara_id != OKAMI_CHARA_ID {
+                return Err(anyhow!(
+                    "温泉剧本只支持女将友人卡（chara {OKAMI_CHARA_ID}）：第 {slot} 槽 {}（cardId {}，chara {}）不是保科健子",
+                    self.base.deck[slot].data.short_name(),
+                    self.base.deck[slot].card_id,
+                    person.chara_id
+                ));
+            }
+        }
         for person in persons {
             self.add_person(person);
         }

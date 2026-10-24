@@ -12,7 +12,7 @@ use umaai_cli::frontend::{PrintFrontend, PrintOptions, Verbosity};
 use umaai_cli::render::term;
 use umaai_core::Data;
 
-use umaai_onsen::{OnsenData, build_game};
+use umaai_onsen::{OnsenData, OnsenView, build_game};
 use umasim::game::Game;
 use umasim::trainer::RandomTrainer;
 
@@ -101,6 +101,38 @@ fn smoke_direct_drive_without_runner() -> Result<()> {
         "直连跑满：回合 {}，评分 {}",
         game.turn(),
         game.uma().five_status.iter().sum::<i32>()
+    );
+    Ok(())
+}
+
+/// OnsenView 快照可序列化往返（A8：单一取数口交付前端）
+#[test]
+fn smoke_view_snapshot_roundtrip() -> Result<()> {
+    let (cfg, data) = setup()?;
+    let mut game = build_game(&cfg, data)?;
+    game.set_rule_master(cfg.sim.seed);
+    let mut decision = StdRng::seed_from_u64(cfg.sim.seed);
+    // 推进到中期：快照含挖掘 / 券 / 旅馆档 / 效果面板等剧本资源
+    while game.turn() < 30 {
+        game.run_stage(&RandomTrainer, &mut decision)?;
+        game.next();
+    }
+    let view = game.view();
+    let json = serde_json::to_string(&view).context("View 序列化失败")?;
+    let back: OnsenView = serde_json::from_str(&json).context("View 反序列化失败")?;
+    if back != view {
+        bail!("View 序列化往返不一致");
+    }
+    if json.is_empty() {
+        bail!("View 序列化为空");
+    }
+    println!(
+        "View 快照（回合 {}）：已挖 {} 座，券 {}，效果剩余 {}，JSON {} 字节",
+        game.turn(),
+        view.dig_count,
+        view.ticket_num,
+        view.buff_remain_turn,
+        json.len()
     );
     Ok(())
 }

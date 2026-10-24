@@ -10,7 +10,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use umaai_core::Array5;
 use umaai_core::gamedata::{ActionValue, EventData};
 
@@ -84,7 +84,7 @@ pub struct OnsenInfo {
 }
 
 /// 源泉效果（同一结构既表示单座源泉，也表示「已挖源泉效果之和」）
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OnsenEffect {
     /// 入浴即时回复体力
@@ -156,7 +156,7 @@ pub struct SuperEffect {
 }
 
 /// 旅馆等级档
-#[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HotelEffect {
     /// 达到该档所需的已挖源泉数

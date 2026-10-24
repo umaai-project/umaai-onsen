@@ -196,7 +196,9 @@
 |---|---|---|
 | 源泉选择顺序 | `onsen_order.{year1,year2,year3}` | 手写策略按年给优先级；值为**索引**（0 基） |
 | 选择交由搜索 | `mcts_selected_onsen` | 旧仓开关：true 时源泉选择也走 MCTS；新仓形态见搜索笔记 |
-| 装备升级推荐 | `RECOMMENDED_TOOL_TYPE` = [0,1,2,0,0,1,1,2,2] | 层次选择表 |
+| 装备升级推荐 | `RECOMMENDED_TOOL_TYPE` = [0,1,2,0,0,1,1,2,2] | 层次选择表（按当前源泉索引取） |
+| 剧本配置段 | `onsen_config.toml` / `OnsenConfig` | 默认层在剧本配置根、覆盖层同名放宿主工作目录（H5 覆盖层语义） |
+| 固定种子基线 | `baselines/onsen_default.json` / `BaselineRecord` | 手写训练员 + 仓内默认数据 / 配置的同种子终局快照；逐字段比对，位移即失败 |
 
 ***
 
@@ -210,7 +212,8 @@
 | 人头 | `BasePerson`（复用） | 复用引擎 `BasePerson` |
 | 剧本资源快照 | 无（旧仓仅有通用 `GameView`） | `OnsenView`（单一取数口，形态 A） |
 | 数据 | `ONSENDATA`（旧引擎全局） | 剧本仓自持 `OnsenData` |
-| 手写策略 | `HandwrittenEvaluator` / `HandwrittenTrainer` | `OnsenTrainer`（M1 最小版） |
+| 手写策略 | `HandwrittenEvaluator` / `HandwrittenTrainer` | `OnsenTrainer`（B5 全量版：守门链 + 打分表） |
+| 手动训练员 | 无 | `ManualTrainer`（feature `manual`：终端交互，人工验证机制用） |
 | 状态字段 | `bathing` / `onsen_state` / `dig_*` / `pending_selection` | 同名（保持可读性） |
 
 ***
@@ -267,3 +270,5 @@
 | 9 | 「最低 3 人」固定不参数化 | 同 #2 |
 | 10 | 随机流**需要改造** | 新仓按引擎三轴重排（规则随机与决策分离，数值整体位移属预期） |
 | 11 | 超上限体力**独立于引擎实现** | `vital > max_vital` 时非超回复的回体**只失效**（不压回上限），消耗照常扣减且只以 0 为下限；临时体力保留到体力低于实际上限。引擎 `Uma::add_value` 会把体力夹回 `max_vital`，本仓以 `OnsenGame::with_vital_overflow` 在体力入账点（训练 / PR / 事件 / 休息心得 / 挖掘奖励 / 休息 / 治病 / 非超回复入浴）本地修正，**不改引擎** |
+| 12 | 分身门槛「支援卡种类」按**全部卡种**统计 | `deck_can_split`：`card_type_count` 全 7 类（速耐力根智 + 友人 + 团队）非零类数 ≥5（2026-10-24 拍板，修正 A6 期误收窄为「前五类全有」；与旧仓口径一致） |
+| 13 | 非保科友人卡**建局报错** | 卡组出现 chara ≠ 9050 的友人卡（`ScenarioCard`）即报错：温泉只支持女将（保科健子）作友人卡，不做旧仓的 `OtherFriend` 降级（2026-10-24 拍板）；宿主以覆盖层注入带女将的卡组（本仓根 `ai_config.toml`：默认卡组的塔可 → 女将 302764） |
